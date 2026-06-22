@@ -134,7 +134,7 @@ if page == "Overview":
     total    = get_treasury_total()
     liq_40   = total * 0.40
     eq_60    = total * 0.60
-    liq_yld  = liq_40 * 0.055
+    liq_yld  = 0.0  # only actual credited interest counts
 
     tdf     = st.session_state.trades
     closed  = tdf[tdf["Status"] == "closed"] if not tdf.empty else pd.DataFrame()
@@ -489,7 +489,7 @@ elif page == "Analytics":
     total    = get_treasury_total()
     liq_40   = total * 0.40
     eq_60    = total * 0.60
-    liq_yld  = liq_40 * 0.055
+    liq_yld  = 0.0  # only actual credited interest counts
     max_pos  = eq_60 * 0.10
 
     tdf     = st.session_state.trades
@@ -511,7 +511,7 @@ elif page == "Analytics":
     r1c1, r1c2, r1c3, r1c4 = st.columns(4)
     r1c1.metric("Treasury Total",        f"₹{total:,.2f}")
     r1c2.metric("Liquidcase 40%",        f"₹{liq_40:,.2f}")
-    r1c3.metric("ETF Yield (est 5.5%)",  f"₹{liq_yld:,.2f}")
+    r1c3.metric("ETF Yield (est 5.5% p.a.)",  f"₹{liq_40 * 0.055:,.2f}", delta="projected")
     r1c4.metric("Equity Pool 60%",       f"₹{eq_60:,.2f}")
 
     r2c1, r2c2, r2c3, r2c4 = st.columns(4)
