@@ -14,17 +14,107 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+/* ── Force dark background everywhere ── */
+html, body, [class*="css"], .stApp {
+    background-color: #0e1117 !important;
+    color: #ffffff !important;
+}
 .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-div[data-testid="stMetric"] { background-color: #1e1e2e; border-radius: 8px; padding: 10px 16px; }
-div[data-testid="stMetricValue"] { font-size: 1.4rem; font-weight: bold; }
-.rule-box { background: #1e1e2e; border-left: 3px solid #1a9641; padding: 10px 16px;
-            border-radius: 0 8px 8px 0; margin-bottom: 8px; font-size: 0.9rem; }
-.badge-green { background: #1a9641; color: white; padding: 2px 8px;
-               border-radius: 4px; font-size: 0.78rem; font-weight: bold; }
-.badge-red   { background: #d7191c; color: white; padding: 2px 8px;
-               border-radius: 4px; font-size: 0.78rem; font-weight: bold; }
-.badge-blue  { background: #0077b6; color: white; padding: 2px 8px;
-               border-radius: 4px; font-size: 0.78rem; font-weight: bold; }
+
+/* ── All plain text white ── */
+p, span, label, div, h1, h2, h3, h4, h5, h6, li, td, th {
+    color: #ffffff !important;
+}
+
+/* ── Inputs, selects, text areas ── */
+input, textarea, select,
+div[data-baseweb="select"] *,
+div[data-baseweb="input"] *,
+div[data-baseweb="textarea"] * {
+    background-color: #1e1e2e !important;
+    color: #ffffff !important;
+    border-color: #3a3f4b !important;
+}
+
+/* ── Tabs ── */
+button[data-baseweb="tab"] {
+    background-color: #1e1e2e !important;
+    color: #aaaaaa !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #1a9641 !important;
+    border-bottom: 2px solid #1a9641 !important;
+}
+
+/* ── Buttons ── */
+button[kind="primary"], button[kind="secondary"],
+div.stButton > button {
+    background-color: #1a9641 !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 6px !important;
+}
+div.stButton > button:hover {
+    background-color: #138a32 !important;
+}
+
+/* ── Metric cards ── */
+div[data-testid="stMetric"] {
+    background-color: #1e1e2e !important;
+    border-radius: 8px;
+    padding: 10px 16px;
+}
+div[data-testid="stMetricValue"],
+div[data-testid="stMetricLabel"],
+div[data-testid="stMetricDelta"] {
+    color: #ffffff !important;
+}
+
+/* ── Dataframe / table ── */
+div[data-testid="stDataFrame"] *,
+.dvn-scroller, .dvn-scroller * {
+    background-color: #1e1e2e !important;
+    color: #ffffff !important;
+}
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background-color: #1e1e2e !important;
+}
+
+/* ── Info / success / warning / error boxes ── */
+div[data-testid="stAlert"] { border-radius: 6px; }
+
+/* ── Number input arrows ── */
+div[data-testid="stNumberInput"] * { color: #ffffff !important; }
+
+/* ── Date input ── */
+div[data-testid="stDateInput"] * { color: #ffffff !important; }
+
+/* ── Selectbox dropdown ── */
+ul[data-testid="stSelectboxVirtualDropdown"] li { 
+    background-color: #1e1e2e !important; color: #ffffff !important; 
+}
+
+/* ── Checkbox ── */
+div[data-testid="stCheckbox"] label { color: #ffffff !important; }
+
+/* ── Slider ── */
+div[data-testid="stSlider"] * { color: #ffffff !important; }
+
+/* ── Custom rule box ── */
+.rule-box {
+    background: #1e1e2e;
+    border-left: 3px solid #1a9641;
+    padding: 10px 16px;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    color: #ffffff !important;
+}
+
+/* ── Horizontal rule ── */
+hr { border-color: #3a3f4b !important; }
 </style>
 """, unsafe_allow_html=True)
 
