@@ -1,6 +1,7 @@
 streamlit
 pandas
 numpy
-plotly
-yfinance
-requests
+pyotp
+smartapi-python
+logzero
+websocket-client
