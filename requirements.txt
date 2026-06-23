@@ -1,3 +1,5 @@
 streamlit
 pandas
+numpy
 plotly
+yfinance==0.2.54
