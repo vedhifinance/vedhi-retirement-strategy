@@ -49,9 +49,15 @@ div[data-testid="stDataFrame"] * {
     color: #ffffff !important;
 }
 section[data-testid="stSidebar"] {
-    background-color: #1e1e2e !important;
+    background-color: #0d2137 !important;
+    border-right: 2px solid #1a9641 !important;
 }
 section[data-testid="stSidebar"] * {
+    color: #ffffff !important;
+}
+section[data-testid="stSidebar"] input {
+    background-color: #1a3a5c !important;
+    border: 1px solid #1a9641 !important;
     color: #ffffff !important;
 }
 hr { border-color: #3a3f4b !important; }
