@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import yfinance as yf
 from datetime import datetime
+import yfinance as yf
+import requests
 
 st.set_page_config(
     page_title="Vedhi Finance | Stock Scanner",
@@ -55,9 +56,7 @@ ul[data-testid="stSelectboxVirtualDropdown"] li {
     color: #ffffff !important;
 }
 hr { border-color: #3a3f4b !important; }
-.pass  { color: #1a9641 !important; font-weight: bold; }
-.fail  { color: #d7191c !important; font-weight: bold; }
-.card  {
+.card {
     background: #1e1e2e;
     border-radius: 10px;
     padding: 16px 20px;
@@ -69,7 +68,6 @@ hr { border-color: #3a3f4b !important; }
 .card-part { border-left: 4px solid #f4a261 !important; }
 .ticker-name { font-size: 1.1rem; font-weight: bold; color: #ffffff; }
 .price-tag   { font-size: 1.4rem; font-weight: bold; color: #ffffff; }
-.filter-row  { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
 .badge       { display: inline-block; padding: 3px 10px; border-radius: 5px;
                font-size: 0.78rem; font-weight: bold; margin: 2px; }
 .badge-pass  { background: #1a3d1a; color: #1a9641; border: 1px solid #1a9641; }
@@ -77,7 +75,7 @@ hr { border-color: #3a3f4b !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Nifty stock list (ticker: display name) ────────────────────────────────────
+# ── Stock list ─────────────────────────────────────────────────────────────────
 NIFTY_STOCKS = {
     "SBIN.NS":        "SBIN — State Bank of India",
     "BEL.NS":         "BEL — Bharat Electronics",
@@ -97,261 +95,245 @@ NIFTY_STOCKS = {
     "POWERGRID.NS":   "Power Grid",
     "ONGC.NS":        "ONGC",
     "COALINDIA.NS":   "Coal India",
-    "ADANIENT.NS":    "Adani Enterprises",
-    "ADANIPORTS.NS":  "Adani Ports",
     "SUNPHARMA.NS":   "Sun Pharma",
     "DRREDDY.NS":     "Dr. Reddy's",
     "CIPLA.NS":       "Cipla",
     "HINDUNILVR.NS":  "HUL",
     "ITC.NS":         "ITC",
+    "ULTRACEMCO.NS":  "UltraTech Cement",
+    "TECHM.NS":       "Tech Mahindra",
+    "ADANIPORTS.NS":  "Adani Ports",
+    "BAJAJFINSV.NS":  "Bajaj Finserv",
     "NESTLEIND.NS":   "Nestle India",
     "BRITANNIA.NS":   "Britannia",
-    "ULTRACEMCO.NS":  "UltraTech Cement",
     "GRASIM.NS":      "Grasim",
-    "TECHM.NS":       "Tech Mahindra",
 }
 
 DEFAULT_WATCHLIST = ["SBIN.NS", "BEL.NS", "ICICIBANK.NS", "RELIANCE.NS", "LT.NS"]
 
-# ── Session state ──────────────────────────────────────────────────────────────
 if "watchlist" not in st.session_state:
     st.session_state.watchlist = DEFAULT_WATCHLIST.copy()
 
-# ── Indicator functions ────────────────────────────────────────────────────────
+# ── Indicators ────────────────────────────────────────────────────────────────
 def compute_rsi(series, period=14):
-    delta = series.diff()
-    gain  = delta.clip(lower=0)
-    loss  = -delta.clip(upper=0)
+    delta    = series.diff()
+    gain     = delta.clip(lower=0)
+    loss     = -delta.clip(upper=0)
     avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
     avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
-    rs  = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    rs       = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
 def compute_ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
-def analyse_stock(ticker):
+@st.cache_data(ttl=300)   # cache 5 minutes so re-runs don't re-fetch
+def fetch_stock(ticker):
     try:
-        df = yf.download(ticker, period="90d", interval="1d",
-                         auto_adjust=True, progress=False)
+        # Use a requests session with proper headers — fixes Streamlit Cloud issue
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        })
+        t  = yf.Ticker(ticker, session=session)
+        df = t.history(period="90d", interval="1d", auto_adjust=True)
+
         if df is None or len(df) < 55:
             return None
 
-        # Flatten MultiIndex columns if present
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        close  = df["Close"]
-        volume = df["Volume"]
+        close  = df["Close"].squeeze()
+        volume = df["Volume"].squeeze()
 
         rsi    = compute_rsi(close, 14)
         ema20  = compute_ema(close, 20)
         ema50  = compute_ema(close, 50)
-        vol_avg20 = volume.rolling(20).mean()
+        vol_avg = volume.rolling(20).mean()
 
-        latest_close   = float(close.iloc[-1])
-        latest_rsi     = float(rsi.iloc[-1])
-        latest_ema20   = float(ema20.iloc[-1])
-        latest_ema50   = float(ema50.iloc[-1])
-        latest_vol     = float(volume.iloc[-1])
-        latest_vol_avg = float(vol_avg20.iloc[-1])
-        vol_ratio      = latest_vol / latest_vol_avg if latest_vol_avg > 0 else 0
+        price      = float(close.iloc[-1])
+        prev_price = float(close.iloc[-2])
+        change_pct = (price - prev_price) / prev_price * 100
 
-        # Previous close for change %
-        prev_close  = float(close.iloc[-2]) if len(close) > 1 else latest_close
-        change_pct  = ((latest_close - prev_close) / prev_close) * 100
+        r_rsi   = float(rsi.iloc[-1])
+        r_ema20 = float(ema20.iloc[-1])
+        r_ema50 = float(ema50.iloc[-1])
+        r_vol   = float(volume.iloc[-1])
+        r_vavg  = float(vol_avg.iloc[-1])
+        vol_ratio = r_vol / r_vavg if r_vavg > 0 else 0
 
-        # Filter checks
-        f1_rsi     = 35 <= latest_rsi <= 45
-        f2_price   = latest_close > latest_ema50
-        f3_ema     = latest_ema20 > latest_ema50
-        f4_volume  = vol_ratio >= 1.2
-
-        filters_passed = sum([f1_rsi, f2_price, f3_ema, f4_volume])
+        f1 = 35 <= r_rsi <= 45
+        f2 = price > r_ema50
+        f3 = r_ema20 > r_ema50
+        f4 = vol_ratio >= 1.2
 
         return {
-            "ticker":       ticker,
-            "name":         NIFTY_STOCKS.get(ticker, ticker),
-            "price":        latest_close,
-            "change_pct":   change_pct,
-            "rsi":          latest_rsi,
-            "ema20":        latest_ema20,
-            "ema50":        latest_ema50,
-            "vol_ratio":    vol_ratio,
-            "f1_rsi":       f1_rsi,
-            "f2_price":     f2_price,
-            "f3_ema":       f3_ema,
-            "f4_volume":    f4_volume,
-            "filters_passed": filters_passed,
-            "all_pass":     filters_passed == 4,
+            "ticker":    ticker,
+            "name":      NIFTY_STOCKS.get(ticker, ticker),
+            "price":     price,
+            "change":    change_pct,
+            "rsi":       r_rsi,
+            "ema20":     r_ema20,
+            "ema50":     r_ema50,
+            "vol_ratio": vol_ratio,
+            "f1": f1, "f2": f2, "f3": f3, "f4": f4,
+            "passed":    sum([f1, f2, f3, f4]),
+            "all_pass":  all([f1, f2, f3, f4]),
         }
     except Exception as e:
-        return None
+        return {"ticker": ticker, "error": str(e)}
 
-
-def badge(label, passed):
-    cls = "badge-pass" if passed else "badge-fail"
-    icon = "✔" if passed else "✖"
+def badge(label, ok):
+    cls = "badge-pass" if ok else "badge-fail"
+    icon = "✔" if ok else "✖"
     return f"<span class='badge {cls}'>{icon} {label}</span>"
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HEADER
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Header ─────────────────────────────────────────────────────────────────────
 st.markdown(
     "<h4 style='color:#1a9641; margin-top:-10px; margin-bottom:4px;'>"
     "Vedhi Finance 📡 Stock Scanner</h4>",
     unsafe_allow_html=True)
 st.markdown(
-    "<p style='color:#8b92a5; margin-top:0; font-size:0.85rem;'>"
+    "<p style='color:#8b92a5; font-size:0.85rem; margin-top:0;'>"
     "RSI 35–45 &nbsp;·&nbsp; Price > 50 EMA &nbsp;·&nbsp; "
     "20 EMA > 50 EMA &nbsp;·&nbsp; Volume > 1.2× 20-day avg</p>",
     unsafe_allow_html=True)
 st.markdown("<hr style='margin:8px 0 14px;'>", unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# WATCHLIST MANAGER
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Watchlist manager ──────────────────────────────────────────────────────────
 with st.expander("⚙️ Manage Watchlist", expanded=False):
-    st.markdown("**Current watchlist:**")
-    for i, t in enumerate(st.session_state.watchlist):
-        c1, c2 = st.columns([5, 1])
-        c1.markdown(f"&nbsp;&nbsp;{i+1}. {NIFTY_STOCKS.get(t, t)}")
+    st.markdown(f"**Watching {len(st.session_state.watchlist)} stocks:**")
+    for t in st.session_state.watchlist:
+        c1, c2 = st.columns([6, 1])
+        c1.markdown(f"&nbsp;&nbsp;• {NIFTY_STOCKS.get(t, t)}")
         with c2:
             if st.button("Remove", key=f"rm_{t}"):
                 st.session_state.watchlist.remove(t)
                 st.rerun()
-
     st.markdown("---")
-    st.markdown("**Add a stock from Nifty:**")
     available = [t for t in NIFTY_STOCKS if t not in st.session_state.watchlist]
     if available:
         col1, col2 = st.columns([4, 1])
         with col1:
-            add_ticker = st.selectbox(
-                "Select stock",
-                options=available,
-                format_func=lambda x: NIFTY_STOCKS[x],
-                label_visibility="collapsed"
-            )
+            add_t = st.selectbox("Add from Nifty",
+                                  options=available,
+                                  format_func=lambda x: NIFTY_STOCKS[x],
+                                  label_visibility="collapsed")
         with col2:
             if st.button("Add ➕"):
-                st.session_state.watchlist.append(add_ticker)
+                st.session_state.watchlist.append(add_t)
                 st.rerun()
-    else:
-        st.info("All Nifty stocks already in watchlist.")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SCAN BUTTON
-# ══════════════════════════════════════════════════════════════════════════════
-col_btn, col_time = st.columns([2, 5])
+# ── Scan ───────────────────────────────────────────────────────────────────────
+col_btn, col_note = st.columns([2, 6])
 with col_btn:
     run_scan = st.button("🔍 Run Scanner", use_container_width=True)
-with col_time:
+with col_note:
     st.markdown(
-        f"<p style='color:#8b92a5; margin-top:8px; font-size:0.82rem;'>"
-        f"Last scanned: {datetime.now().strftime('%d %b %Y, %I:%M %p') if run_scan else '—'}"
-        f"</p>", unsafe_allow_html=True)
+        "<p style='color:#8b92a5; margin-top:8px; font-size:0.82rem;'>"
+        "Data from Yahoo Finance · refreshes every 5 min</p>",
+        unsafe_allow_html=True)
 
 if run_scan:
-    results = []
-    progress = st.progress(0, text="Fetching data...")
+    results, errors = [], []
+    bar = st.progress(0)
     for i, ticker in enumerate(st.session_state.watchlist):
-        progress.progress(
-            (i + 1) / len(st.session_state.watchlist),
-            text=f"Analysing {NIFTY_STOCKS.get(ticker, ticker)}...")
-        result = analyse_stock(ticker)
-        if result:
-            results.append(result)
-    progress.empty()
+        bar.progress((i+1) / len(st.session_state.watchlist),
+                     text=f"Fetching {NIFTY_STOCKS.get(ticker, ticker)}...")
+        r = fetch_stock(ticker)
+        if r and "error" not in r:
+            results.append(r)
+        elif r and "error" in r:
+            errors.append(r)
+        else:
+            errors.append({"ticker": ticker, "error": "No data returned"})
+    bar.empty()
+
+    if errors:
+        with st.expander(f"⚠️ {len(errors)} stock(s) could not be fetched"):
+            for e in errors:
+                st.warning(f"{e['ticker']}: {e.get('error','unknown error')}")
 
     if not results:
-        st.error("Could not fetch data. Check your internet connection.")
+        st.error("No data fetched. Yahoo Finance may be temporarily unavailable — try again in a minute.")
+        st.stop()
+
+    results.sort(key=lambda x: (-x["all_pass"], -x["passed"]))
+    passed = [r for r in results if r["all_pass"]]
+    partial = [r for r in results if not r["all_pass"]]
+
+    # Metrics
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Scanned",          len(results))
+    m2.metric("✅ All 4 Pass",    len(passed))
+    m3.metric("⚠️ Partial",       len(partial))
+    m4.metric("Last Scan",        datetime.now().strftime("%I:%M %p"))
+
+    st.markdown("---")
+
+    if passed:
+        st.markdown("### ✅ Setup Ready — All 4 Filters Passed")
     else:
-        # Sort: all-pass first, then by filters passed desc
-        results.sort(key=lambda x: (-x["all_pass"], -x["filters_passed"]))
+        st.markdown("### ⚠️ No stock passes all 4 filters right now")
 
-        passed_all = [r for r in results if r["all_pass"]]
-        partial    = [r for r in results if not r["all_pass"]]
+    # Stock cards
+    for r in results:
+        cc = "card-pass" if r["all_pass"] else ("card-part" if r["passed"] >= 2 else "card-fail")
+        chg_col = "#1a9641" if r["change"] >= 0 else "#d7191c"
+        sign    = "+" if r["change"] >= 0 else ""
 
-        # Summary row
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Stocks Scanned",    len(results))
-        m2.metric("✅ All Filters Pass", len(passed_all))
-        m3.metric("⚠️ Partial Match",  len(partial))
-        m4.metric("Watchlist Size",    len(st.session_state.watchlist))
+        b1 = badge(f"RSI {r['rsi']:.1f}  (35–45)",               r["f1"])
+        b2 = badge(f"Price ₹{r['price']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f2"])
+        b3 = badge(f"EMA20 ₹{r['ema20']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f3"])
+        b4 = badge(f"Volume {r['vol_ratio']:.2f}× avg  (need ≥1.2×)",    r["f4"])
 
-        st.markdown("---")
-
-        if passed_all:
-            st.markdown("### ✅ Ready to Watch — All 4 Filters Passed")
-        else:
-            st.markdown(
-                "### ⚠️ No stock passes all 4 filters right now",
-                )
-            st.markdown(
-                "<p style='color:#8b92a5; font-size:0.85rem;'>"
-                "Showing partial matches below.</p>",
-                unsafe_allow_html=True)
-
-        # Render each stock card
-        for r in results:
-            card_class = "card-pass" if r["all_pass"] else \
-                         ("card-part" if r["filters_passed"] >= 2 else "card-fail")
-
-            change_color = "#1a9641" if r["change_pct"] >= 0 else "#d7191c"
-            change_sign  = "+" if r["change_pct"] >= 0 else ""
-
-            b1 = badge(f"RSI {r['rsi']:.1f} (35–45)", r["f1_rsi"])
-            b2 = badge(f"Price ₹{r['price']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f2_price"])
-            b3 = badge(f"EMA20 ₹{r['ema20']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f3_ema"])
-            b4 = badge(f"Vol {r['vol_ratio']:.2f}× avg (need 1.2×)", r["f4_volume"])
-
-            filters_text = b1 + b2 + b3 + b4
-
-            st.markdown(f"""
-            <div class='card {card_class}'>
-                <div style='display:flex; justify-content:space-between; align-items:center;'>
-                    <span class='ticker-name'>{r['name']}</span>
-                    <span class='price-tag'>
-                        ₹{r['price']:,.2f}
-                        &nbsp;<span style='font-size:0.85rem; color:{change_color};'>
-                        {change_sign}{r['change_pct']:.2f}%</span>
-                    </span>
-                </div>
-                <div style='margin-top:8px;'>{filters_text}</div>
-                <div style='margin-top:6px; color:#8b92a5; font-size:0.78rem;'>
-                    {r['filters_passed']}/4 filters passed
-                </div>
+        st.markdown(f"""
+        <div class='card {cc}'>
+            <div style='display:flex; justify-content:space-between; align-items:center;'>
+                <span class='ticker-name'>{r['name']}</span>
+                <span class='price-tag'>
+                    ₹{r['price']:,.2f}
+                    &nbsp;<span style='font-size:0.85rem; color:{chg_col};'>
+                    {sign}{r['change']:.2f}%</span>
+                </span>
             </div>
-            """, unsafe_allow_html=True)
+            <div style='margin-top:8px;'>{b1}{b2}{b3}{b4}</div>
+            <div style='color:#8b92a5; font-size:0.78rem; margin-top:6px;'>
+                {r['passed']}/4 filters passed
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Summary table
-        st.markdown("---")
-        st.markdown("#### 📋 Quick Summary Table")
-        table_data = []
-        for r in results:
-            table_data.append({
-                "Stock":       r["name"],
-                "Price (₹)":  f"₹{r['price']:,.2f}",
-                "Change":      f"{'+' if r['change_pct'] >= 0 else ''}{r['change_pct']:.2f}%",
-                "RSI":         f"{r['rsi']:.1f}",
-                "EMA20":       f"₹{r['ema20']:.2f}",
-                "EMA50":       f"₹{r['ema50']:.2f}",
-                "Vol Ratio":   f"{r['vol_ratio']:.2f}×",
-                "Filters":     f"{r['filters_passed']}/4",
-                "Signal":      "✅ BUY SETUP" if r["all_pass"] else (
-                               "⚠️ Partial" if r["filters_passed"] >= 2 else "❌ No signal")
-            })
-        st.dataframe(pd.DataFrame(table_data), hide_index=True, use_container_width=True)
+    # Table
+    st.markdown("---")
+    st.markdown("#### 📋 Summary Table")
+    rows = []
+    for r in results:
+        rows.append({
+            "Stock":      r["name"],
+            "Price":      f"₹{r['price']:,.2f}",
+            "Change":     f"{'+' if r['change']>=0 else ''}{r['change']:.2f}%",
+            "RSI":        f"{r['rsi']:.1f}",
+            "EMA20":      f"₹{r['ema20']:.2f}",
+            "EMA50":      f"₹{r['ema50']:.2f}",
+            "Vol Ratio":  f"{r['vol_ratio']:.2f}×",
+            "Filters":    f"{r['passed']}/4",
+            "Signal":     "✅ BUY SETUP" if r["all_pass"] else
+                          ("⚠️ Partial"  if r["passed"] >= 2 else "❌ No signal"),
+        })
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
 else:
+    watching = ", ".join([NIFTY_STOCKS.get(t,t).split(" — ")[0] for t in st.session_state.watchlist])
     st.markdown(
-        "<div style='text-align:center; color:#8b92a5; padding:40px 0;'>"
-        "<p style='font-size:2rem;'>📡</p>"
-        "<p>Click <b>Run Scanner</b> to analyse your watchlist</p>"
-        f"<p style='font-size:0.8rem;'>Watching: "
-        f"{', '.join([NIFTY_STOCKS.get(t,t).split(' — ')[0] for t in st.session_state.watchlist])}"
-        f"</p></div>",
+        f"<div style='text-align:center; color:#8b92a5; padding:60px 0;'>"
+        f"<p style='font-size:2.5rem;'>📡</p>"
+        f"<p style='font-size:1rem;'>Click <b style='color:#ffffff;'>Run Scanner</b> to analyse your watchlist</p>"
+        f"<p style='font-size:0.82rem;'>Watching: {watching}</p>"
+        f"</div>",
         unsafe_allow_html=True)
