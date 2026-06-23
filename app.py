@@ -1,16 +1,16 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from datetime import date
+import numpy as np
+import yfinance as yf
+from datetime import datetime
 
-# ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Vedhi Finance | Retirement Strategy",
+    page_title="Vedhi Finance | Stock Scanner",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ── Dark theme CSS ─────────────────────────────────────────────────────────────
+# ── Dark theme ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 html, body, [class*="css"], .stApp {
@@ -29,14 +29,6 @@ div[data-baseweb="textarea"] * {
     color: #ffffff !important;
     border-color: #3a3f4b !important;
 }
-button[data-baseweb="tab"] {
-    background-color: #1e1e2e !important;
-    color: #aaaaaa !important;
-}
-button[data-baseweb="tab"][aria-selected="true"] {
-    color: #1a9641 !important;
-    border-bottom: 2px solid #1a9641 !important;
-}
 div.stButton > button {
     background-color: #1a9641 !important;
     color: #ffffff !important;
@@ -47,525 +39,319 @@ div.stButton > button {
 div.stButton > button:hover { background-color: #138a32 !important; }
 div[data-testid="stMetric"] {
     background-color: #1e1e2e !important;
-    border-radius: 8px;
-    padding: 12px 16px;
+    border-radius: 8px; padding: 12px 16px;
 }
 div[data-testid="stMetricValue"],
 div[data-testid="stMetricLabel"],
 div[data-testid="stMetricDelta"] { color: #ffffff !important; }
-div[data-testid="stDataFrame"] * { background-color: #1e1e2e !important; color: #ffffff !important; }
+div[data-testid="stDataFrame"] * {
+    background-color: #1e1e2e !important;
+    color: #ffffff !important;
+}
 div[data-testid="stNumberInput"] * { color: #ffffff !important; }
-div[data-testid="stDateInput"] *   { color: #ffffff !important; }
 div[data-testid="stCheckbox"] label { color: #ffffff !important; }
-div[data-testid="stSlider"] *      { color: #ffffff !important; }
 ul[data-testid="stSelectboxVirtualDropdown"] li {
-    background-color: #1e1e2e !important; color: #ffffff !important;
+    background-color: #1e1e2e !important;
+    color: #ffffff !important;
 }
 hr { border-color: #3a3f4b !important; }
-.info-box {
-    background: #1a2e1a;
-    border-left: 4px solid #1a9641;
-    border-radius: 0 8px 8px 0;
-    padding: 12px 16px;
-    margin-bottom: 10px;
+.pass  { color: #1a9641 !important; font-weight: bold; }
+.fail  { color: #d7191c !important; font-weight: bold; }
+.card  {
+    background: #1e1e2e;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    border: 1px solid #2a2f3a;
 }
+.card-pass { border-left: 4px solid #1a9641 !important; }
+.card-fail { border-left: 4px solid #d7191c !important; }
+.card-part { border-left: 4px solid #f4a261 !important; }
+.ticker-name { font-size: 1.1rem; font-weight: bold; color: #ffffff; }
+.price-tag   { font-size: 1.4rem; font-weight: bold; color: #ffffff; }
+.filter-row  { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.badge       { display: inline-block; padding: 3px 10px; border-radius: 5px;
+               font-size: 0.78rem; font-weight: bold; margin: 2px; }
+.badge-pass  { background: #1a3d1a; color: #1a9641; border: 1px solid #1a9641; }
+.badge-fail  { background: #3d1a1a; color: #d7191c; border: 1px solid #d7191c; }
 </style>
 """, unsafe_allow_html=True)
 
+# ── Nifty stock list (ticker: display name) ────────────────────────────────────
+NIFTY_STOCKS = {
+    "SBIN.NS":        "SBIN — State Bank of India",
+    "BEL.NS":         "BEL — Bharat Electronics",
+    "ICICIBANK.NS":   "ICICI Bank",
+    "RELIANCE.NS":    "Reliance Industries",
+    "LT.NS":          "L&T — Larsen & Toubro",
+    "HDFCBANK.NS":    "HDFC Bank",
+    "INFY.NS":        "Infosys",
+    "TCS.NS":         "TCS",
+    "WIPRO.NS":       "Wipro",
+    "AXISBANK.NS":    "Axis Bank",
+    "BAJFINANCE.NS":  "Bajaj Finance",
+    "MARUTI.NS":      "Maruti Suzuki",
+    "TATAMOTORS.NS":  "Tata Motors",
+    "TATASTEEL.NS":   "Tata Steel",
+    "NTPC.NS":        "NTPC",
+    "POWERGRID.NS":   "Power Grid",
+    "ONGC.NS":        "ONGC",
+    "COALINDIA.NS":   "Coal India",
+    "ADANIENT.NS":    "Adani Enterprises",
+    "ADANIPORTS.NS":  "Adani Ports",
+    "SUNPHARMA.NS":   "Sun Pharma",
+    "DRREDDY.NS":     "Dr. Reddy's",
+    "CIPLA.NS":       "Cipla",
+    "HINDUNILVR.NS":  "HUL",
+    "ITC.NS":         "ITC",
+    "NESTLEIND.NS":   "Nestle India",
+    "BRITANNIA.NS":   "Britannia",
+    "ULTRACEMCO.NS":  "UltraTech Cement",
+    "GRASIM.NS":      "Grasim",
+    "TECHM.NS":       "Tech Mahindra",
+}
+
+DEFAULT_WATCHLIST = ["SBIN.NS", "BEL.NS", "ICICIBANK.NS", "RELIANCE.NS", "LT.NS"]
+
 # ── Session state ──────────────────────────────────────────────────────────────
-if "treasury" not in st.session_state:
-    st.session_state.treasury = pd.DataFrame(
-        columns=["Date", "Amount", "NAV", "Units", "Note"])
+if "watchlist" not in st.session_state:
+    st.session_state.watchlist = DEFAULT_WATCHLIST.copy()
 
-if "trades" not in st.session_state:
-    st.session_state.trades = pd.DataFrame(
-        columns=["ID", "Ticker", "Tranche", "Buy Date", "Buy Rate",
-                 "Qty", "Invested", "Stop Loss", "Target",
-                 "Sell Date", "Sell Rate", "Status", "P&L", "Holding Days", "Note"])
+# ── Indicator functions ────────────────────────────────────────────────────────
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain  = delta.clip(lower=0)
+    loss  = -delta.clip(upper=0)
+    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs  = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
-if "page" not in st.session_state:
-    st.session_state.page = "Overview"
+def compute_ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
 
-if "next_id" not in st.session_state:
-    st.session_state.next_id = 1
+def analyse_stock(ticker):
+    try:
+        df = yf.download(ticker, period="90d", interval="1d",
+                         auto_adjust=True, progress=False)
+        if df is None or len(df) < 55:
+            return None
 
-# ── Helper functions ───────────────────────────────────────────────────────────
-def get_treasury_total():
-    if st.session_state.treasury.empty:
-        return 0.0
-    return float(st.session_state.treasury["Amount"].sum())
+        # Flatten MultiIndex columns if present
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-def get_total_units():
-    if st.session_state.treasury.empty:
-        return 0.0
-    return float(st.session_state.treasury["Units"].sum())
+        close  = df["Close"]
+        volume = df["Volume"]
 
-# ── Header ─────────────────────────────────────────────────────────────────────
+        rsi    = compute_rsi(close, 14)
+        ema20  = compute_ema(close, 20)
+        ema50  = compute_ema(close, 50)
+        vol_avg20 = volume.rolling(20).mean()
+
+        latest_close   = float(close.iloc[-1])
+        latest_rsi     = float(rsi.iloc[-1])
+        latest_ema20   = float(ema20.iloc[-1])
+        latest_ema50   = float(ema50.iloc[-1])
+        latest_vol     = float(volume.iloc[-1])
+        latest_vol_avg = float(vol_avg20.iloc[-1])
+        vol_ratio      = latest_vol / latest_vol_avg if latest_vol_avg > 0 else 0
+
+        # Previous close for change %
+        prev_close  = float(close.iloc[-2]) if len(close) > 1 else latest_close
+        change_pct  = ((latest_close - prev_close) / prev_close) * 100
+
+        # Filter checks
+        f1_rsi     = 35 <= latest_rsi <= 45
+        f2_price   = latest_close > latest_ema50
+        f3_ema     = latest_ema20 > latest_ema50
+        f4_volume  = vol_ratio >= 1.2
+
+        filters_passed = sum([f1_rsi, f2_price, f3_ema, f4_volume])
+
+        return {
+            "ticker":       ticker,
+            "name":         NIFTY_STOCKS.get(ticker, ticker),
+            "price":        latest_close,
+            "change_pct":   change_pct,
+            "rsi":          latest_rsi,
+            "ema20":        latest_ema20,
+            "ema50":        latest_ema50,
+            "vol_ratio":    vol_ratio,
+            "f1_rsi":       f1_rsi,
+            "f2_price":     f2_price,
+            "f3_ema":       f3_ema,
+            "f4_volume":    f4_volume,
+            "filters_passed": filters_passed,
+            "all_pass":     filters_passed == 4,
+        }
+    except Exception as e:
+        return None
+
+
+def badge(label, passed):
+    cls = "badge-pass" if passed else "badge-fail"
+    icon = "✔" if passed else "✖"
+    return f"<span class='badge {cls}'>{icon} {label}</span>"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HEADER
+# ══════════════════════════════════════════════════════════════════════════════
 st.markdown(
-    "<h4 style='color:#1a9641; margin-top:-10px; margin-bottom:0;'>"
-    "Vedhi Finance 💰 Retirement Strategy Dashboard</h4>",
+    "<h4 style='color:#1a9641; margin-top:-10px; margin-bottom:4px;'>"
+    "Vedhi Finance 📡 Stock Scanner</h4>",
     unsafe_allow_html=True)
-st.markdown("<hr style='margin-top:6px; margin-bottom:8px;'>", unsafe_allow_html=True)
-
-# ── Navigation ─────────────────────────────────────────────────────────────────
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    if st.button("📊  Overview",         use_container_width=True):
-        st.session_state.page = "Overview"
-with c2:
-    if st.button("🏦  Treasury Account", use_container_width=True):
-        st.session_state.page = "Treasury"
-with c3:
-    if st.button("📈  Equity Trades",    use_container_width=True):
-        st.session_state.page = "Trades"
-with c4:
-    if st.button("📉  Analytics",        use_container_width=True):
-        st.session_state.page = "Analytics"
-
-st.markdown("<hr style='margin-top:8px; margin-bottom:14px;'>", unsafe_allow_html=True)
-page = st.session_state.page
-
+st.markdown(
+    "<p style='color:#8b92a5; margin-top:0; font-size:0.85rem;'>"
+    "RSI 35–45 &nbsp;·&nbsp; Price > 50 EMA &nbsp;·&nbsp; "
+    "20 EMA > 50 EMA &nbsp;·&nbsp; Volume > 1.2× 20-day avg</p>",
+    unsafe_allow_html=True)
+st.markdown("<hr style='margin:8px 0 14px;'>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE 1 — OVERVIEW
+# WATCHLIST MANAGER
 # ══════════════════════════════════════════════════════════════════════════════
-if page == "Overview":
-
-    total    = get_treasury_total()
-    liq_40   = total * 0.40
-    eq_60    = total * 0.60
-    liq_yld  = 0.0  # only actual credited interest counts
-
-    tdf     = st.session_state.trades
-    closed  = tdf[tdf["Status"] == "closed"] if not tdf.empty else pd.DataFrame()
-    open_t  = tdf[tdf["Status"] == "open"]   if not tdf.empty else pd.DataFrame()
-    swing_pnl = float(closed["P&L"].sum()) if not closed.empty else 0.0
-    combined  = swing_pnl + liq_yld
-    comb_pct  = (combined / total * 100) if total else 0.0
-
-    # ── Metric cards ──
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("💰 Total Treasury",      f"₹{total:,.2f}")
-    m2.metric("🏦 Liquidcase 40%",      f"₹{liq_40:,.2f}")
-    m3.metric("⚡ Equity Pool 60%",     f"₹{eq_60:,.2f}")
-    m4.metric("📈 Combined Return",     f"{comb_pct:.2f}%",
-              delta=f"₹{combined:,.2f}")
+with st.expander("⚙️ Manage Watchlist", expanded=False):
+    st.markdown("**Current watchlist:**")
+    for i, t in enumerate(st.session_state.watchlist):
+        c1, c2 = st.columns([5, 1])
+        c1.markdown(f"&nbsp;&nbsp;{i+1}. {NIFTY_STOCKS.get(t, t)}")
+        with c2:
+            if st.button("Remove", key=f"rm_{t}"):
+                st.session_state.watchlist.remove(t)
+                st.rerun()
 
     st.markdown("---")
-
-    # ── Allocation bar ──
-    st.markdown("#### Portfolio Allocation")
-    fig_alloc = go.Figure(go.Bar(
-        x=[liq_40, eq_60],
-        y=["Liquidcase ETF (40%)", "Equity Pool (60%)"],
-        orientation="h",
-        marker_color=["#0077b6", "#1a9641"],
-        text=[f"₹{liq_40:,.2f}", f"₹{eq_60:,.2f}"],
-        textposition="inside",
-        textfont=dict(color="white", size=14)
-    ))
-    fig_alloc.update_layout(
-        template="plotly_dark",
-        height=160,
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(showticklabels=False, showgrid=False),
-        yaxis=dict(showgrid=False),
-        plot_bgcolor="#0e1117",
-        paper_bgcolor="#0e1117"
-    )
-    st.plotly_chart(fig_alloc, use_container_width=True)
-
-    st.markdown("---")
-
-    # ── Open positions ──
-    st.markdown("#### 📂 Open Equity Positions")
-    if open_t.empty:
-        st.info("No open trades yet. Go to 📈 Equity Trades to log your first buy.")
+    st.markdown("**Add a stock from Nifty:**")
+    available = [t for t in NIFTY_STOCKS if t not in st.session_state.watchlist]
+    if available:
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            add_ticker = st.selectbox(
+                "Select stock",
+                options=available,
+                format_func=lambda x: NIFTY_STOCKS[x],
+                label_visibility="collapsed"
+            )
+        with col2:
+            if st.button("Add ➕"):
+                st.session_state.watchlist.append(add_ticker)
+                st.rerun()
     else:
-        cols = ["ID", "Ticker", "Tranche", "Buy Date", "Buy Rate",
-                "Qty", "Invested", "Stop Loss", "Target"]
-        st.dataframe(open_t[cols].reset_index(drop=True),
-                     hide_index=True, use_container_width=True)
-
+        st.info("All Nifty stocks already in watchlist.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE 2 — TREASURY ACCOUNT
+# SCAN BUTTON
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "Treasury":
+col_btn, col_time = st.columns([2, 5])
+with col_btn:
+    run_scan = st.button("🔍 Run Scanner", use_container_width=True)
+with col_time:
+    st.markdown(
+        f"<p style='color:#8b92a5; margin-top:8px; font-size:0.82rem;'>"
+        f"Last scanned: {datetime.now().strftime('%d %b %Y, %I:%M %p') if run_scan else '—'}"
+        f"</p>", unsafe_allow_html=True)
 
-    st.markdown("#### 🏦 Treasury Account — Liquidcase ETF")
-    st.markdown("""
-    <div class='info-box'>
-    Everything you invest goes into <b>Liquidcase ETF</b>.<br>
-    &nbsp;&nbsp;📦 <b>40%</b> stays in the ETF — earns ~5.5% per year.<br>
-    &nbsp;&nbsp;⚡ <b>60%</b> is your Equity Pool — used for swing trades.
-    </div>
-    """, unsafe_allow_html=True)
+if run_scan:
+    results = []
+    progress = st.progress(0, text="Fetching data...")
+    for i, ticker in enumerate(st.session_state.watchlist):
+        progress.progress(
+            (i + 1) / len(st.session_state.watchlist),
+            text=f"Analysing {NIFTY_STOCKS.get(ticker, ticker)}...")
+        result = analyse_stock(ticker)
+        if result:
+            results.append(result)
+    progress.empty()
 
-    total      = get_treasury_total()
-    units      = get_total_units()
-    avg_nav    = (total / units) if units > 0 else 0.0
+    if not results:
+        st.error("Could not fetch data. Check your internet connection.")
+    else:
+        # Sort: all-pass first, then by filters passed desc
+        results.sort(key=lambda x: (-x["all_pass"], -x["filters_passed"]))
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Invested",       f"₹{total:,.2f}")
-    m2.metric("Total Units Held",     f"{units:,.4f}")
-    m3.metric("Avg NAV",              f"₹{avg_nav:.4f}")
-    m4.metric("Equity Pool (60%)",    f"₹{total * 0.60:,.2f}")
+        passed_all = [r for r in results if r["all_pass"]]
+        partial    = [r for r in results if not r["all_pass"]]
 
-    st.markdown("---")
+        # Summary row
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Stocks Scanned",    len(results))
+        m2.metric("✅ All Filters Pass", len(passed_all))
+        m3.metric("⚠️ Partial Match",  len(partial))
+        m4.metric("Watchlist Size",    len(st.session_state.watchlist))
 
-    tab_add, tab_log, tab_io = st.tabs(
-        ["➕ Add Investment", "📜 Transaction Log", "⬆️ Import / Export"])
+        st.markdown("---")
 
-    with tab_add:
-        with st.form("treasury_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                t_date   = st.date_input("Date", value=date.today())
-                t_amount = st.number_input("Amount to Invest (₹)",
-                                           min_value=0.01, step=1000.0, format="%.2f")
-            with col2:
-                t_nav  = st.number_input("Liquidcase NAV (₹ per unit)",
-                                         min_value=0.01, step=0.01,
-                                         format="%.4f", value=1000.0)
-                t_note = st.text_input("Note (optional)")
-
-            if t_nav > 0 and t_amount > 0:
-                preview_units = t_amount / t_nav
-                st.info(f"You will receive **{preview_units:,.4f} units** at NAV ₹{t_nav:.4f}")
-
-            if st.form_submit_button("✅ Invest in Liquidcase ETF", use_container_width=True):
-                units_bought = round(t_amount / t_nav, 4)
-                new_row = pd.DataFrame([{
-                    "Date": str(t_date), "Amount": round(t_amount, 2),
-                    "NAV": t_nav, "Units": units_bought, "Note": t_note
-                }])
-                st.session_state.treasury = pd.concat(
-                    [st.session_state.treasury, new_row], ignore_index=True)
-                new_total = get_treasury_total()
-                st.success(
-                    f"✅ Bought {units_bought:,.4f} units at ₹{t_nav:.4f}  ·  "
-                    f"Treasury total: ₹{new_total:,.2f}"
+        if passed_all:
+            st.markdown("### ✅ Ready to Watch — All 4 Filters Passed")
+        else:
+            st.markdown(
+                "### ⚠️ No stock passes all 4 filters right now",
                 )
-                st.rerun()
+            st.markdown(
+                "<p style='color:#8b92a5; font-size:0.85rem;'>"
+                "Showing partial matches below.</p>",
+                unsafe_allow_html=True)
 
-    with tab_log:
-        df = st.session_state.treasury
-        if df.empty:
-            st.info("No investments yet.")
-        else:
-            # Running balance column
-            display = df.copy()
-            display["Running Balance"] = display["Amount"].cumsum().apply(lambda x: f"₹{x:,.2f}")
-            display["Amount"] = display["Amount"].apply(lambda x: f"₹{x:,.2f}")
-            display["NAV"]    = display["NAV"].apply(lambda x: f"₹{x:.4f}")
-            st.dataframe(display, hide_index=True, use_container_width=True)
+        # Render each stock card
+        for r in results:
+            card_class = "card-pass" if r["all_pass"] else \
+                         ("card-part" if r["filters_passed"] >= 2 else "card-fail")
 
-            st.markdown("---")
-            del_idx = st.number_input("Delete row number (0 = first row)",
-                                      min_value=0, max_value=max(0, len(df)-1), step=1)
-            if st.button("🗑️ Delete Row"):
-                st.session_state.treasury = df.drop(index=del_idx).reset_index(drop=True)
-                st.success("Row deleted.")
-                st.rerun()
+            change_color = "#1a9641" if r["change_pct"] >= 0 else "#d7191c"
+            change_sign  = "+" if r["change_pct"] >= 0 else ""
 
-    with tab_io:
-        st.markdown("**💾 Save your data — download before closing the app**")
-        if not st.session_state.treasury.empty:
-            st.download_button("⬇️ Download Treasury CSV",
-                               st.session_state.treasury.to_csv(index=False),
-                               "treasury.csv", "text/csv", use_container_width=True)
-        else:
-            st.info("Nothing to export yet.")
+            b1 = badge(f"RSI {r['rsi']:.1f} (35–45)", r["f1_rsi"])
+            b2 = badge(f"Price ₹{r['price']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f2_price"])
+            b3 = badge(f"EMA20 ₹{r['ema20']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f3_ema"])
+            b4 = badge(f"Vol {r['vol_ratio']:.2f}× avg (need 1.2×)", r["f4_volume"])
+
+            filters_text = b1 + b2 + b3 + b4
+
+            st.markdown(f"""
+            <div class='card {card_class}'>
+                <div style='display:flex; justify-content:space-between; align-items:center;'>
+                    <span class='ticker-name'>{r['name']}</span>
+                    <span class='price-tag'>
+                        ₹{r['price']:,.2f}
+                        &nbsp;<span style='font-size:0.85rem; color:{change_color};'>
+                        {change_sign}{r['change_pct']:.2f}%</span>
+                    </span>
+                </div>
+                <div style='margin-top:8px;'>{filters_text}</div>
+                <div style='margin-top:6px; color:#8b92a5; font-size:0.78rem;'>
+                    {r['filters_passed']}/4 filters passed
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Summary table
         st.markdown("---")
-        st.markdown("**📂 Restore from a previous session**")
-        up = st.file_uploader("Upload treasury.csv", type="csv", key="up_t")
-        if up:
-            st.session_state.treasury = pd.read_csv(up)
-            st.success(f"Loaded {len(st.session_state.treasury)} rows.")
-            st.rerun()
+        st.markdown("#### 📋 Quick Summary Table")
+        table_data = []
+        for r in results:
+            table_data.append({
+                "Stock":       r["name"],
+                "Price (₹)":  f"₹{r['price']:,.2f}",
+                "Change":      f"{'+' if r['change_pct'] >= 0 else ''}{r['change_pct']:.2f}%",
+                "RSI":         f"{r['rsi']:.1f}",
+                "EMA20":       f"₹{r['ema20']:.2f}",
+                "EMA50":       f"₹{r['ema50']:.2f}",
+                "Vol Ratio":   f"{r['vol_ratio']:.2f}×",
+                "Filters":     f"{r['filters_passed']}/4",
+                "Signal":      "✅ BUY SETUP" if r["all_pass"] else (
+                               "⚠️ Partial" if r["filters_passed"] >= 2 else "❌ No signal")
+            })
+        st.dataframe(pd.DataFrame(table_data), hide_index=True, use_container_width=True)
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE 3 — EQUITY TRADES
-# ══════════════════════════════════════════════════════════════════════════════
-elif page == "Trades":
-
-    st.markdown("#### 📈 Equity Swing Trades")
-
-    total   = get_treasury_total()
-    eq_pool = total * 0.60
-    max_pos = eq_pool * 0.10
-
-    if total > 0:
-        st.markdown(
-            f"<div class='info-box'>"
-            f"Treasury: <b>₹{total:,.2f}</b> &nbsp;·&nbsp; "
-            f"Equity Pool (60%): <b>₹{eq_pool:,.2f}</b> &nbsp;·&nbsp; "
-            f"Max per trade (10%): <b>₹{max_pos:,.2f}</b>"
-            f"</div>", unsafe_allow_html=True)
-    else:
-        st.warning("Add funds to Treasury Account first.")
-
-    tab_buy, tab_sell, tab_open, tab_closed, tab_io = st.tabs([
-        "🟢 Log Buy", "🔴 Close Trade",
-        "📂 Open Trades", "📜 Closed Trades", "⬆️ Import / Export"])
-
-    with tab_buy:
-        with st.form("buy_form", clear_on_submit=True):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                ticker   = st.text_input("Ticker (e.g. RELIANCE)").upper().strip()
-                buy_date = st.date_input("Buy Date", value=date.today())
-                tranche  = st.selectbox("Tranche",
-                    ["1 — Initial entry", "2 — Add-on at −7%"])
-            with col2:
-                buy_rate = st.number_input("Buy Rate (₹)", min_value=0.01,
-                                           step=0.5, format="%.2f")
-                qty      = st.number_input("Quantity", min_value=1, step=1)
-            with col3:
-                note = st.text_input("Entry note (optional)")
-                if buy_rate > 0 and qty > 0:
-                    st.markdown(f"**Invested:** ₹{buy_rate * qty:,.2f}")
-                    st.markdown(f"**Stop Loss (−2%):** ₹{buy_rate * 0.98:.2f}")
-                    st.markdown(f"**Min Target (+4%):** ₹{buy_rate * 1.04:.2f}")
-
-            if st.form_submit_button("✅ Log Buy", use_container_width=True):
-                if not ticker:
-                    st.error("Enter a ticker symbol.")
-                elif buy_rate == 0 or qty == 0:
-                    st.error("Rate and quantity must be > 0.")
-                else:
-                    tid = st.session_state.next_id
-                    st.session_state.next_id += 1
-                    new_trade = pd.DataFrame([{
-                        "ID": tid, "Ticker": ticker,
-                        "Tranche": int(tranche[0]),
-                        "Buy Date": str(buy_date),
-                        "Buy Rate": buy_rate, "Qty": qty,
-                        "Invested": round(buy_rate * qty, 2),
-                        "Stop Loss": round(buy_rate * 0.98, 2),
-                        "Target": round(buy_rate * 1.04, 2),
-                        "Sell Date": None, "Sell Rate": None,
-                        "Status": "open", "P&L": None,
-                        "Holding Days": None, "Note": note
-                    }])
-                    st.session_state.trades = pd.concat(
-                        [st.session_state.trades, new_trade], ignore_index=True)
-                    st.success(
-                        f"✅ {ticker} T{tranche[0]} logged  ·  "
-                        f"Stop ₹{buy_rate * 0.98:.2f}  ·  "
-                        f"Target ₹{buy_rate * 1.04:.2f}"
-                    )
-                    st.rerun()
-
-    with tab_sell:
-        tdf      = st.session_state.trades
-        open_tdf = tdf[tdf["Status"] == "open"] if not tdf.empty else pd.DataFrame()
-
-        if open_tdf.empty:
-            st.info("No open trades to close.")
-        else:
-            st.dataframe(
-                open_tdf[["ID","Ticker","Tranche","Buy Date",
-                           "Buy Rate","Qty","Invested","Stop Loss","Target"]
-                         ].reset_index(drop=True),
-                hide_index=True, use_container_width=True)
-
-            with st.form("sell_form", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    sel_id    = st.number_input("Trade ID to close", min_value=1, step=1)
-                    sell_date = st.date_input("Sell Date", value=date.today())
-                with col2:
-                    sell_rate = st.number_input("Sell Rate (₹)", min_value=0.01,
-                                                step=0.5, format="%.2f")
-                    sell_nav  = st.number_input("Liquidcase NAV today (₹)",
-                                                min_value=0.01, step=0.01,
-                                                format="%.4f", value=1000.0)
-
-                st.info("Sale proceeds will be reinvested automatically into Liquidcase ETF.")
-
-                if st.form_submit_button("🔴 Close Trade & Reinvest", use_container_width=True):
-                    match = tdf[(tdf["ID"] == sel_id) & (tdf["Status"] == "open")]
-                    if match.empty:
-                        st.error(f"No open trade with ID {sel_id}.")
-                    else:
-                        idx      = match.index[0]
-                        row      = tdf.loc[idx]
-                        pnl      = round((sell_rate - float(row["Buy Rate"])) * float(row["Qty"]), 2)
-                        sell_amt = round(sell_rate * float(row["Qty"]), 2)
-                        try:
-                            days = (pd.to_datetime(sell_date).date() -
-                                    pd.to_datetime(row["Buy Date"]).date()).days
-                        except:
-                            days = 0
-
-                        # Close trade
-                        st.session_state.trades.at[idx, "Sell Date"]    = str(sell_date)
-                        st.session_state.trades.at[idx, "Sell Rate"]    = sell_rate
-                        st.session_state.trades.at[idx, "Status"]       = "closed"
-                        st.session_state.trades.at[idx, "P&L"]          = pnl
-                        st.session_state.trades.at[idx, "Holding Days"] = days
-
-                        # Reinvest proceeds into ETF
-                        units_back = round(sell_amt / sell_nav, 4)
-                        pnl_str    = f"+₹{pnl:,.2f}" if pnl >= 0 else f"₹{pnl:,.2f}"
-                        note_txt   = (f"Closed trade #{sel_id} {row['Ticker']} — "
-                                      f"₹{sell_amt:,.2f} reinvested ({pnl_str} P&L)")
-                        new_row = pd.DataFrame([{
-                            "Date": str(sell_date), "Amount": sell_amt,
-                            "NAV": sell_nav, "Units": units_back, "Note": note_txt
-                        }])
-                        st.session_state.treasury = pd.concat(
-                            [st.session_state.treasury, new_row], ignore_index=True)
-
-                        emoji = "🟢" if pnl >= 0 else "🔴"
-                        st.success(
-                            f"{emoji} Trade #{sel_id} closed  ·  "
-                            f"P&L ₹{pnl:,.2f}  ·  {days} days held  ·  "
-                            f"{units_back:.4f} ETF units reinvested"
-                        )
-                        st.rerun()
-
-    with tab_open:
-        tdf    = st.session_state.trades
-        open_t = tdf[tdf["Status"] == "open"] if not tdf.empty else pd.DataFrame()
-        if open_t.empty:
-            st.info("No open trades.")
-        else:
-            st.dataframe(
-                open_t[["ID","Ticker","Tranche","Buy Date","Buy Rate",
-                         "Qty","Invested","Stop Loss","Target","Note"]
-                       ].reset_index(drop=True),
-                hide_index=True, use_container_width=True)
-
-    with tab_closed:
-        tdf      = st.session_state.trades
-        closed_t = tdf[tdf["Status"] == "closed"] if not tdf.empty else pd.DataFrame()
-        if closed_t.empty:
-            st.info("No closed trades yet.")
-        else:
-            display = closed_t[["ID","Ticker","Tranche","Buy Date","Sell Date",
-                                  "Buy Rate","Sell Rate","Qty","Invested",
-                                  "P&L","Holding Days"]].copy()
-            display["P&L"] = display["P&L"].apply(
-                lambda x: f"₹{x:,.2f}" if pd.notna(x) else "—")
-            st.dataframe(display.reset_index(drop=True),
-                         hide_index=True, use_container_width=True)
-            total_pnl = float(closed_t["P&L"].sum())
-            if total_pnl >= 0:
-                st.success(f"Total Realized Profit: ₹{total_pnl:,.2f}")
-            else:
-                st.error(f"Total Realized Loss: ₹{abs(total_pnl):,.2f}")
-
-    with tab_io:
-        st.markdown("**💾 Export trades**")
-        if not st.session_state.trades.empty:
-            st.download_button("⬇️ Download Trades CSV",
-                               st.session_state.trades.to_csv(index=False),
-                               "trades.csv", "text/csv", use_container_width=True)
-        else:
-            st.info("Nothing to export yet.")
-        st.markdown("---")
-        st.markdown("**📂 Import trades**")
-        up = st.file_uploader("Upload trades.csv", type="csv", key="up_tr")
-        if up:
-            imported = pd.read_csv(up)
-            st.session_state.trades = imported
-            st.session_state.next_id = int(imported["ID"].max()) + 1 \
-                if "ID" in imported.columns and not imported.empty else 1
-            st.success(f"Loaded {len(imported)} trades.")
-            st.rerun()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE 4 — ANALYTICS
-# ══════════════════════════════════════════════════════════════════════════════
-elif page == "Analytics":
-
-    st.markdown("#### 📉 Analytics & Performance")
-
-    total    = get_treasury_total()
-    liq_40   = total * 0.40
-    eq_60    = total * 0.60
-    liq_yld  = 0.0  # only actual credited interest counts
-    max_pos  = eq_60 * 0.10
-
-    tdf     = st.session_state.trades
-    closed  = tdf[tdf["Status"] == "closed"] if not tdf.empty else pd.DataFrame()
-    open_t  = tdf[tdf["Status"] == "open"]   if not tdf.empty else pd.DataFrame()
-
-    wins    = closed[closed["P&L"] > 0]  if not closed.empty else pd.DataFrame()
-    losses  = closed[closed["P&L"] <= 0] if not closed.empty else pd.DataFrame()
-
-    swing_pnl = float(closed["P&L"].sum())          if not closed.empty else 0.0
-    avg_win   = float(wins["P&L"].mean())            if not wins.empty   else 0.0
-    avg_loss  = float(losses["P&L"].mean())          if not losses.empty else 0.0
-    avg_days  = float(closed["Holding Days"].mean()) if not closed.empty else 0.0
-    win_rate  = len(wins) / len(closed) * 100        if not closed.empty else 0.0
-    combined  = swing_pnl + liq_yld
-    comb_pct  = combined / total * 100               if total            else 0.0
-
-    # Metric cards
-    r1c1, r1c2, r1c3, r1c4 = st.columns(4)
-    r1c1.metric("Treasury Total",        f"₹{total:,.2f}")
-    r1c2.metric("Liquidcase 40%",        f"₹{liq_40:,.2f}")
-    r1c3.metric("ETF Yield (est 5.5% p.a.)",  f"₹{liq_40 * 0.055:,.2f}", delta="projected")
-    r1c4.metric("Equity Pool 60%",       f"₹{eq_60:,.2f}")
-
-    r2c1, r2c2, r2c3, r2c4 = st.columns(4)
-    r2c1.metric("Total Trades",    len(tdf) if not tdf.empty else 0)
-    r2c2.metric("Win Rate",        f"{win_rate:.1f}%")
-    r2c3.metric("Avg Win",         f"₹{avg_win:,.2f}")
-    r2c4.metric("Avg Loss",        f"₹{avg_loss:,.2f}")
-
-    r3c1, r3c2, r3c3, r3c4 = st.columns(4)
-    r3c1.metric("Avg Holding Days",  f"{avg_days:.1f}")
-    r3c2.metric("Swing P&L",         f"₹{swing_pnl:,.2f}",
-                delta=f"{'profit' if swing_pnl >= 0 else 'loss'}")
-    r3c3.metric("Combined Return",   f"₹{combined:,.2f}",
-                delta=f"{comb_pct:.2f}% of treasury")
-    r3c4.metric("Open Trades",       len(open_t))
-
-    st.markdown("---")
-
-    if closed.empty:
-        st.info("Close some trades to see charts.")
-    else:
-        # P&L per trade
-        colors = ["#1a9641" if v >= 0 else "#d7191c"
-                  for v in closed["P&L"].values]
-        fig1 = go.Figure(go.Bar(
-            x=closed["Ticker"].astype(str) + " T" + closed["Tranche"].astype(str),
-            y=closed["P&L"],
-            marker_color=colors,
-            text=[f"₹{v:,.2f}" for v in closed["P&L"]],
-            textposition="outside",
-            textfont=dict(color="white")
-        ))
-        fig1.update_layout(
-            title="P&L per Closed Trade",
-            template="plotly_dark", height=350,
-            margin=dict(l=20, r=20, t=40, b=20),
-            yaxis_title="P&L (₹)",
-            plot_bgcolor="#0e1117", paper_bgcolor="#0e1117"
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-
-        # Cumulative P&L
-        cum = closed["P&L"].cumsum().values
-        fig2 = go.Figure(go.Scatter(
-            x=list(range(1, len(cum)+1)), y=cum,
-            mode="lines+markers",
-            line=dict(color="#1a9641", width=2),
-            fill="tozeroy", fillcolor="rgba(26,150,65,0.15)"
-        ))
-        fig2.update_layout(
-            title="Cumulative Swing P&L",
-            template="plotly_dark", height=300,
-            margin=dict(l=20, r=20, t=40, b=20),
-            xaxis_title="Trade #", yaxis_title="₹",
-            plot_bgcolor="#0e1117", paper_bgcolor="#0e1117"
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.markdown(
+        "<div style='text-align:center; color:#8b92a5; padding:40px 0;'>"
+        "<p style='font-size:2rem;'>📡</p>"
+        "<p>Click <b>Run Scanner</b> to analyse your watchlist</p>"
+        f"<p style='font-size:0.8rem;'>Watching: "
+        f"{', '.join([NIFTY_STOCKS.get(t,t).split(' — ')[0] for t in st.session_state.watchlist])}"
+        f"</p></div>",
+        unsafe_allow_html=True)
