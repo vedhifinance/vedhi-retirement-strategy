@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import yfinance as yf
-import requests
+import pyotp
+from datetime import datetime, timedelta
 
 st.set_page_config(
     page_title="Vedhi Finance | Stock Scanner",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ── Dark theme ─────────────────────────────────────────────────────────────────
@@ -49,10 +48,10 @@ div[data-testid="stDataFrame"] * {
     background-color: #1e1e2e !important;
     color: #ffffff !important;
 }
-div[data-testid="stNumberInput"] * { color: #ffffff !important; }
-div[data-testid="stCheckbox"] label { color: #ffffff !important; }
-ul[data-testid="stSelectboxVirtualDropdown"] li {
+section[data-testid="stSidebar"] {
     background-color: #1e1e2e !important;
+}
+section[data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
 hr { border-color: #3a3f4b !important; }
@@ -66,55 +65,91 @@ hr { border-color: #3a3f4b !important; }
 .card-pass { border-left: 4px solid #1a9641 !important; }
 .card-fail { border-left: 4px solid #d7191c !important; }
 .card-part { border-left: 4px solid #f4a261 !important; }
-.ticker-name { font-size: 1.1rem; font-weight: bold; color: #ffffff; }
-.price-tag   { font-size: 1.4rem; font-weight: bold; color: #ffffff; }
-.badge       { display: inline-block; padding: 3px 10px; border-radius: 5px;
-               font-size: 0.78rem; font-weight: bold; margin: 2px; }
-.badge-pass  { background: #1a3d1a; color: #1a9641; border: 1px solid #1a9641; }
-.badge-fail  { background: #3d1a1a; color: #d7191c; border: 1px solid #d7191c; }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 5px;
+         font-size: 0.78rem; font-weight: bold; margin: 2px; }
+.badge-pass { background:#1a3d1a; color:#1a9641; border:1px solid #1a9641; }
+.badge-fail { background:#3d1a1a; color:#d7191c; border:1px solid #d7191c; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Stock list ─────────────────────────────────────────────────────────────────
-NIFTY_STOCKS = {
-    "SBIN.NS":        "SBIN — State Bank of India",
-    "BEL.NS":         "BEL — Bharat Electronics",
-    "ICICIBANK.NS":   "ICICI Bank",
-    "RELIANCE.NS":    "Reliance Industries",
-    "LT.NS":          "L&T — Larsen & Toubro",
-    "HDFCBANK.NS":    "HDFC Bank",
-    "INFY.NS":        "Infosys",
-    "TCS.NS":         "TCS",
-    "WIPRO.NS":       "Wipro",
-    "AXISBANK.NS":    "Axis Bank",
-    "BAJFINANCE.NS":  "Bajaj Finance",
-    "MARUTI.NS":      "Maruti Suzuki",
-    "TATAMOTORS.NS":  "Tata Motors",
-    "TATASTEEL.NS":   "Tata Steel",
-    "NTPC.NS":        "NTPC",
-    "POWERGRID.NS":   "Power Grid",
-    "ONGC.NS":        "ONGC",
-    "COALINDIA.NS":   "Coal India",
-    "SUNPHARMA.NS":   "Sun Pharma",
-    "DRREDDY.NS":     "Dr. Reddy's",
-    "CIPLA.NS":       "Cipla",
-    "HINDUNILVR.NS":  "HUL",
-    "ITC.NS":         "ITC",
-    "ULTRACEMCO.NS":  "UltraTech Cement",
-    "TECHM.NS":       "Tech Mahindra",
-    "ADANIPORTS.NS":  "Adani Ports",
-    "BAJAJFINSV.NS":  "Bajaj Finserv",
-    "NESTLEIND.NS":   "Nestle India",
-    "BRITANNIA.NS":   "Britannia",
-    "GRASIM.NS":      "Grasim",
-}
+# ── Stock list with Angel One token IDs ───────────────────────────────────────
+# symboltoken from Angel One instrument list (NSE)
+WATCHLIST_DEFAULT = [
+    {"symbol": "SBIN",      "token": "3045",  "name": "State Bank of India"},
+    {"symbol": "BEL",       "token": "383",   "name": "Bharat Electronics"},
+    {"symbol": "ICICIBANK", "token": "4963",  "name": "ICICI Bank"},
+    {"symbol": "RELIANCE",  "token": "2885",  "name": "Reliance Industries"},
+    {"symbol": "LT",        "token": "11483", "name": "Larsen & Toubro"},
+]
 
-DEFAULT_WATCHLIST = ["SBIN.NS", "BEL.NS", "ICICIBANK.NS", "RELIANCE.NS", "LT.NS"]
+NIFTY_EXTRA = [
+    {"symbol": "HDFCBANK",   "token": "1333",  "name": "HDFC Bank"},
+    {"symbol": "INFY",       "token": "1594",  "name": "Infosys"},
+    {"symbol": "TCS",        "token": "11536", "name": "TCS"},
+    {"symbol": "WIPRO",      "token": "3787",  "name": "Wipro"},
+    {"symbol": "AXISBANK",   "token": "5900",  "name": "Axis Bank"},
+    {"symbol": "BAJFINANCE", "token": "317",   "name": "Bajaj Finance"},
+    {"symbol": "MARUTI",     "token": "10999", "name": "Maruti Suzuki"},
+    {"symbol": "TATAMOTORS", "token": "3456",  "name": "Tata Motors"},
+    {"symbol": "TATASTEEL",  "token": "3499",  "name": "Tata Steel"},
+    {"symbol": "NTPC",       "token": "11630", "name": "NTPC"},
+    {"symbol": "ONGC",       "token": "2475",  "name": "ONGC"},
+    {"symbol": "COALINDIA",  "token": "20374", "name": "Coal India"},
+    {"symbol": "SUNPHARMA",  "token": "3351",  "name": "Sun Pharma"},
+    {"symbol": "DRREDDY",    "token": "881",   "name": "Dr Reddy's"},
+    {"symbol": "CIPLA",      "token": "694",   "name": "Cipla"},
+    {"symbol": "ITC",        "token": "1660",  "name": "ITC"},
+    {"symbol": "POWERGRID",  "token": "14977", "name": "Power Grid"},
+    {"symbol": "ADANIPORTS", "token": "15083", "name": "Adani Ports"},
+    {"symbol": "TECHM",      "token": "13538", "name": "Tech Mahindra"},
+    {"symbol": "ULTRACEMCO", "token": "11532", "name": "UltraTech Cement"},
+]
 
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = DEFAULT_WATCHLIST.copy()
+    st.session_state.watchlist = WATCHLIST_DEFAULT.copy()
+if "smart_api" not in st.session_state:
+    st.session_state.smart_api = None
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-# ── Indicators ────────────────────────────────────────────────────────────────
+# ── Sidebar — credentials ──────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 🔐 Angel One Login")
+    st.markdown("<p style='font-size:0.8rem; color:#8b92a5;'>Credentials stay in your browser session only — never saved to file or GitHub.</p>", unsafe_allow_html=True)
+
+    api_key   = st.text_input("API Key",      type="password", key="api_key_input")
+    client_id = st.text_input("Client ID",    key="client_id_input")
+    password  = st.text_input("PIN/Password", type="password", key="password_input")
+    totp_secret = st.text_input("TOTP Secret", type="password", key="totp_input",
+                                help="The base secret from Smart API TOTP setup — not the 6-digit code")
+
+    if st.button("🔗 Connect to Angel One", use_container_width=True):
+        if not all([api_key, client_id, password, totp_secret]):
+            st.error("Please fill in all fields.")
+        else:
+            try:
+                from SmartApi import SmartConnect
+                obj   = SmartConnect(api_key=api_key)
+                totp  = pyotp.TOTP(totp_secret).now()
+                data  = obj.generateSession(client_id, password, totp)
+                if data["status"]:
+                    st.session_state.smart_api = obj
+                    st.session_state.logged_in = True
+                    st.success(f"✅ Connected — {client_id}")
+                else:
+                    st.error(f"Login failed: {data.get('message','Unknown error')}")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+
+    if st.session_state.logged_in:
+        st.markdown("---")
+        st.success("🟢 Connected to Angel One")
+        if st.button("Disconnect", use_container_width=True):
+            st.session_state.smart_api = None
+            st.session_state.logged_in = False
+            st.rerun()
+
+# ── Indicator helpers ──────────────────────────────────────────────────────────
 def compute_rsi(series, period=14):
     delta    = series.diff()
     gain     = delta.clip(lower=0)
@@ -127,34 +162,42 @@ def compute_rsi(series, period=14):
 def compute_ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
-@st.cache_data(ttl=300)   # cache 5 minutes so re-runs don't re-fetch
-def fetch_stock(ticker):
+def analyse_stock(obj, stock):
     try:
-        # Use a requests session with proper headers — fixes Streamlit Cloud issue
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        })
-        t  = yf.Ticker(ticker, session=session)
-        df = t.history(period="90d", interval="1d", auto_adjust=True)
+        # Fetch 90 days of daily candles
+        to_date   = datetime.now().strftime("%Y-%m-%d %H:%M")
+        from_date = (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d %H:%M")
 
-        if df is None or len(df) < 55:
-            return None
+        params = {
+            "exchange":    "NSE",
+            "symboltoken": stock["token"],
+            "interval":    "ONE_DAY",
+            "fromdate":    from_date,
+            "todate":      to_date,
+        }
+        resp = obj.getCandleData(params)
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        if not resp or not resp.get("status") or not resp.get("data"):
+            return {"symbol": stock["symbol"], "name": stock["name"],
+                    "error": resp.get("message", "No data") if resp else "No response"}
 
-        close  = df["Close"].squeeze()
-        volume = df["Volume"].squeeze()
+        # Parse candles: [timestamp, open, high, low, close, volume]
+        candles = resp["data"]
+        if len(candles) < 55:
+            return {"symbol": stock["symbol"], "name": stock["name"],
+                    "error": f"Not enough data ({len(candles)} bars)"}
+
+        df          = pd.DataFrame(candles, columns=["ts","open","high","low","close","volume"])
+        df["close"] = pd.to_numeric(df["close"])
+        df["volume"]= pd.to_numeric(df["volume"])
+
+        close  = df["close"]
+        volume = df["volume"]
 
         rsi    = compute_rsi(close, 14)
         ema20  = compute_ema(close, 20)
         ema50  = compute_ema(close, 50)
-        vol_avg = volume.rolling(20).mean()
+        vavg20 = volume.rolling(20).mean()
 
         price      = float(close.iloc[-1])
         prev_price = float(close.iloc[-2])
@@ -164,7 +207,7 @@ def fetch_stock(ticker):
         r_ema20 = float(ema20.iloc[-1])
         r_ema50 = float(ema50.iloc[-1])
         r_vol   = float(volume.iloc[-1])
-        r_vavg  = float(vol_avg.iloc[-1])
+        r_vavg  = float(vavg20.iloc[-1])
         vol_ratio = r_vol / r_vavg if r_vavg > 0 else 0
 
         f1 = 35 <= r_rsi <= 45
@@ -173,8 +216,8 @@ def fetch_stock(ticker):
         f4 = vol_ratio >= 1.2
 
         return {
-            "ticker":    ticker,
-            "name":      NIFTY_STOCKS.get(ticker, ticker),
+            "symbol":    stock["symbol"],
+            "name":      stock["name"],
             "price":     price,
             "change":    change_pct,
             "rsi":       r_rsi,
@@ -186,20 +229,20 @@ def fetch_stock(ticker):
             "all_pass":  all([f1, f2, f3, f4]),
         }
     except Exception as e:
-        return {"ticker": ticker, "error": str(e)}
+        return {"symbol": stock["symbol"], "name": stock["name"], "error": str(e)}
 
 def badge(label, ok):
-    cls = "badge-pass" if ok else "badge-fail"
+    cls  = "badge-pass" if ok else "badge-fail"
     icon = "✔" if ok else "✖"
     return f"<span class='badge {cls}'>{icon} {label}</span>"
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.markdown(
     "<h4 style='color:#1a9641; margin-top:-10px; margin-bottom:4px;'>"
-    "Vedhi Finance 📡 Stock Scanner</h4>",
-    unsafe_allow_html=True)
+    "Vedhi Finance 📡 Stock Scanner</h4>", unsafe_allow_html=True)
 st.markdown(
     "<p style='color:#8b92a5; font-size:0.85rem; margin-top:0;'>"
+    "Live data via Angel One &nbsp;·&nbsp; "
     "RSI 35–45 &nbsp;·&nbsp; Price > 50 EMA &nbsp;·&nbsp; "
     "20 EMA > 50 EMA &nbsp;·&nbsp; Volume > 1.2× 20-day avg</p>",
     unsafe_allow_html=True)
@@ -208,71 +251,84 @@ st.markdown("<hr style='margin:8px 0 14px;'>", unsafe_allow_html=True)
 # ── Watchlist manager ──────────────────────────────────────────────────────────
 with st.expander("⚙️ Manage Watchlist", expanded=False):
     st.markdown(f"**Watching {len(st.session_state.watchlist)} stocks:**")
-    for t in st.session_state.watchlist:
+    for s in st.session_state.watchlist:
         c1, c2 = st.columns([6, 1])
-        c1.markdown(f"&nbsp;&nbsp;• {NIFTY_STOCKS.get(t, t)}")
+        c1.markdown(f"&nbsp;&nbsp;• **{s['symbol']}** — {s['name']}")
         with c2:
-            if st.button("Remove", key=f"rm_{t}"):
-                st.session_state.watchlist.remove(t)
+            if st.button("Remove", key=f"rm_{s['symbol']}"):
+                st.session_state.watchlist = [
+                    x for x in st.session_state.watchlist if x["symbol"] != s["symbol"]]
                 st.rerun()
+
     st.markdown("---")
-    available = [t for t in NIFTY_STOCKS if t not in st.session_state.watchlist]
+    current_symbols = [s["symbol"] for s in st.session_state.watchlist]
+    available = [s for s in NIFTY_EXTRA if s["symbol"] not in current_symbols]
     if available:
         col1, col2 = st.columns([4, 1])
         with col1:
-            add_t = st.selectbox("Add from Nifty",
+            add_s = st.selectbox("Add from Nifty",
                                   options=available,
-                                  format_func=lambda x: NIFTY_STOCKS[x],
+                                  format_func=lambda x: f"{x['symbol']} — {x['name']}",
                                   label_visibility="collapsed")
         with col2:
             if st.button("Add ➕"):
-                st.session_state.watchlist.append(add_t)
+                st.session_state.watchlist.append(add_s)
                 st.rerun()
 
-# ── Scan ───────────────────────────────────────────────────────────────────────
+# ── Not logged in state ────────────────────────────────────────────────────────
+if not st.session_state.logged_in:
+    st.markdown(
+        "<div style='text-align:center; color:#8b92a5; padding:60px 0;'>"
+        "<p style='font-size:2.5rem;'>🔐</p>"
+        "<p style='font-size:1rem; color:#ffffff;'>Connect your Angel One account to get live data</p>"
+        "<p style='font-size:0.85rem;'>Enter your credentials in the left sidebar</p>"
+        "</div>", unsafe_allow_html=True)
+    st.stop()
+
+# ── Scan button ────────────────────────────────────────────────────────────────
 col_btn, col_note = st.columns([2, 6])
 with col_btn:
     run_scan = st.button("🔍 Run Scanner", use_container_width=True)
 with col_note:
     st.markdown(
         "<p style='color:#8b92a5; margin-top:8px; font-size:0.82rem;'>"
-        "Data from Yahoo Finance · refreshes every 5 min</p>",
+        "Fetches live daily candles from Angel One</p>",
         unsafe_allow_html=True)
 
 if run_scan:
     results, errors = [], []
+    obj = st.session_state.smart_api
     bar = st.progress(0)
-    for i, ticker in enumerate(st.session_state.watchlist):
+
+    for i, stock in enumerate(st.session_state.watchlist):
         bar.progress((i+1) / len(st.session_state.watchlist),
-                     text=f"Fetching {NIFTY_STOCKS.get(ticker, ticker)}...")
-        r = fetch_stock(ticker)
-        if r and "error" not in r:
-            results.append(r)
-        elif r and "error" in r:
+                     text=f"Analysing {stock['symbol']}...")
+        r = analyse_stock(obj, stock)
+        if "error" in r:
             errors.append(r)
         else:
-            errors.append({"ticker": ticker, "error": "No data returned"})
+            results.append(r)
     bar.empty()
 
     if errors:
-        with st.expander(f"⚠️ {len(errors)} stock(s) could not be fetched"):
+        with st.expander(f"⚠️ {len(errors)} stock(s) failed"):
             for e in errors:
-                st.warning(f"{e['ticker']}: {e.get('error','unknown error')}")
+                st.warning(f"{e['symbol']}: {e['error']}")
 
     if not results:
-        st.error("No data fetched. Yahoo Finance may be temporarily unavailable — try again in a minute.")
+        st.error("No data returned. Check your Angel One session — it may have expired. Reconnect from the sidebar.")
         st.stop()
 
     results.sort(key=lambda x: (-x["all_pass"], -x["passed"]))
-    passed = [r for r in results if r["all_pass"]]
+    passed  = [r for r in results if r["all_pass"]]
     partial = [r for r in results if not r["all_pass"]]
 
-    # Metrics
+    # Summary metrics
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Scanned",          len(results))
-    m2.metric("✅ All 4 Pass",    len(passed))
-    m3.metric("⚠️ Partial",       len(partial))
-    m4.metric("Last Scan",        datetime.now().strftime("%I:%M %p"))
+    m1.metric("Stocks Scanned",    len(results))
+    m2.metric("✅ All 4 Pass",     len(passed))
+    m3.metric("⚠️ Partial Match",  len(partial))
+    m4.metric("Scanned At",        datetime.now().strftime("%I:%M %p"))
 
     st.markdown("---")
 
@@ -280,23 +336,25 @@ if run_scan:
         st.markdown("### ✅ Setup Ready — All 4 Filters Passed")
     else:
         st.markdown("### ⚠️ No stock passes all 4 filters right now")
+        st.markdown("<p style='color:#8b92a5; font-size:0.85rem;'>Showing partial matches below.</p>",
+                    unsafe_allow_html=True)
 
     # Stock cards
     for r in results:
-        cc = "card-pass" if r["all_pass"] else ("card-part" if r["passed"] >= 2 else "card-fail")
-        chg_col = "#1a9641" if r["change"] >= 0 else "#d7191c"
-        sign    = "+" if r["change"] >= 0 else ""
+        cc       = "card-pass" if r["all_pass"] else ("card-part" if r["passed"] >= 2 else "card-fail")
+        chg_col  = "#1a9641" if r["change"] >= 0 else "#d7191c"
+        sign     = "+" if r["change"] >= 0 else ""
 
-        b1 = badge(f"RSI {r['rsi']:.1f}  (35–45)",               r["f1"])
+        b1 = badge(f"RSI {r['rsi']:.1f}  (35–45)",                        r["f1"])
         b2 = badge(f"Price ₹{r['price']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f2"])
         b3 = badge(f"EMA20 ₹{r['ema20']:.2f} > EMA50 ₹{r['ema50']:.2f}", r["f3"])
-        b4 = badge(f"Volume {r['vol_ratio']:.2f}× avg  (need ≥1.2×)",    r["f4"])
+        b4 = badge(f"Volume {r['vol_ratio']:.2f}× avg  (need ≥ 1.2×)",   r["f4"])
 
         st.markdown(f"""
         <div class='card {cc}'>
             <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <span class='ticker-name'>{r['name']}</span>
-                <span class='price-tag'>
+                <span style='font-size:1.1rem; font-weight:bold;'>{r['symbol']} — {r['name']}</span>
+                <span style='font-size:1.4rem; font-weight:bold;'>
                     ₹{r['price']:,.2f}
                     &nbsp;<span style='font-size:0.85rem; color:{chg_col};'>
                     {sign}{r['change']:.2f}%</span>
@@ -309,31 +367,30 @@ if run_scan:
         </div>
         """, unsafe_allow_html=True)
 
-    # Table
+    # Summary table
     st.markdown("---")
     st.markdown("#### 📋 Summary Table")
     rows = []
     for r in results:
         rows.append({
-            "Stock":      r["name"],
-            "Price":      f"₹{r['price']:,.2f}",
-            "Change":     f"{'+' if r['change']>=0 else ''}{r['change']:.2f}%",
-            "RSI":        f"{r['rsi']:.1f}",
-            "EMA20":      f"₹{r['ema20']:.2f}",
-            "EMA50":      f"₹{r['ema50']:.2f}",
-            "Vol Ratio":  f"{r['vol_ratio']:.2f}×",
-            "Filters":    f"{r['passed']}/4",
-            "Signal":     "✅ BUY SETUP" if r["all_pass"] else
-                          ("⚠️ Partial"  if r["passed"] >= 2 else "❌ No signal"),
+            "Stock":     f"{r['symbol']} — {r['name']}",
+            "Price":     f"₹{r['price']:,.2f}",
+            "Change":    f"{'+' if r['change']>=0 else ''}{r['change']:.2f}%",
+            "RSI":       f"{r['rsi']:.1f}",
+            "EMA20":     f"₹{r['ema20']:.2f}",
+            "EMA50":     f"₹{r['ema50']:.2f}",
+            "Vol Ratio": f"{r['vol_ratio']:.2f}×",
+            "Filters":   f"{r['passed']}/4",
+            "Signal":    "✅ BUY SETUP" if r["all_pass"] else
+                         ("⚠️ Partial"  if r["passed"] >= 2 else "❌ No signal"),
         })
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
 else:
-    watching = ", ".join([NIFTY_STOCKS.get(t,t).split(" — ")[0] for t in st.session_state.watchlist])
+    watching = ", ".join([s["symbol"] for s in st.session_state.watchlist])
     st.markdown(
         f"<div style='text-align:center; color:#8b92a5; padding:60px 0;'>"
         f"<p style='font-size:2.5rem;'>📡</p>"
-        f"<p style='font-size:1rem;'>Click <b style='color:#ffffff;'>Run Scanner</b> to analyse your watchlist</p>"
+        f"<p style='font-size:1rem; color:#ffffff;'>Click <b>Run Scanner</b> to get live data</p>"
         f"<p style='font-size:0.82rem;'>Watching: {watching}</p>"
-        f"</div>",
-        unsafe_allow_html=True)
+        f"</div>", unsafe_allow_html=True)
