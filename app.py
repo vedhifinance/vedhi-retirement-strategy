@@ -60,13 +60,13 @@ section[data-testid="stSidebar"] input {
 hr { border-color: #3a3f4b !important; }
 
 /* Scanner table styling */
-.scan-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+.scan-table { width:100%; border-collapse:collapse; font-size:0.85rem; background:#0e1117; color:#ffffff; }
 .scan-table th {
     background:#1a2a3a; color:#8b92a5; padding:8px 10px;
     text-align:left; border-bottom:1px solid #3a3f4b;
     font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px;
 }
-.scan-table td { padding:8px 10px; border-bottom:1px solid #1e2a38; vertical-align:middle; }
+.scan-table td { padding:8px 10px; border-bottom:1px solid #1e2a38; vertical-align:middle; color:#ffffff; background:#0e1117; }
 .scan-table tr:hover td { background:#1a2535; }
 .stock-name { font-weight:bold; color:#ffffff; }
 .chg-pos { color:#1a9641; font-weight:bold; }
@@ -118,7 +118,7 @@ ALL_STOCKS = [
     {"symbol":"ITC",         "token":"1660",  "name":"ITC"},
     {"symbol":"INDUSINDBK",  "token":"5258",  "name":"IndusInd Bank"},
     {"symbol":"INFY",        "token":"1594",  "name":"Infosys"},
-    {"symbol":"JSWSTEEL",    "token":"11723", "name":"JSW Steel"},
+    {"symbol":"JSWSTEEL",    "token":"3001", "name":"JSW Steel"},
     {"symbol":"KOTAKBANK",   "token":"1922",  "name":"Kotak Mahindra Bank"},
     {"symbol":"LT",          "token":"11483", "name":"Larsen & Toubro"},
     {"symbol":"LTIM",        "token":"17818", "name":"LTIMindtree"},
@@ -138,7 +138,7 @@ ALL_STOCKS = [
     {"symbol":"TATASTEEL",   "token":"3499",  "name":"Tata Steel"},
     {"symbol":"TECHM",       "token":"13538", "name":"Tech Mahindra"},
     {"symbol":"TITAN",       "token":"3506",  "name":"Titan"},
-    {"symbol":"ULTRACEMCO",  "token":"11532", "name":"UltraTech Cement"},
+    {"symbol":"ULTRACEMCO",  "token":"1624", "name":"UltraTech Cement"},
     {"symbol":"WIPRO",       "token":"3787",  "name":"Wipro"},
     {"symbol":"ZOMATO",      "token":"5097",  "name":"Zomato"},
 ]
@@ -397,6 +397,7 @@ if run_scan:
         </tr>"""
 
     st.markdown(f"""
+    <div style='background:#0e1117; padding:4px; border-radius:8px;'>
     <table class='scan-table'>
         <thead>
             <tr>
@@ -418,6 +419,7 @@ if run_scan:
             {rows_html}
         </tbody>
     </table>
+    </div>
     """, unsafe_allow_html=True)
 
     st.markdown(
