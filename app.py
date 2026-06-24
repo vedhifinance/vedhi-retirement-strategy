@@ -4,6 +4,7 @@ import numpy as np
 import pyotp
 import pytz
 from datetime import datetime, timedelta
+import time
 
 st.set_page_config(
     page_title="Vedhi Finance | Stock Scanner",
@@ -233,7 +234,14 @@ if run_scan:
         if r:
             results.append(r)
         else:
-            errors.append(stock["symbol"])
+            # Retry once after a short wait
+            time.sleep(0.5)
+            r = analyse(obj, stock)
+            if r:
+                results.append(r)
+            else:
+                errors.append(stock["symbol"])
+        time.sleep(0.3)  # rate limit buffer
     bar.empty()
 
     if errors:
