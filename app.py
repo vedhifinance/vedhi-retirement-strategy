@@ -230,18 +230,18 @@ if run_scan:
     for i, stock in enumerate(stocks_to_scan):
         bar.progress((i+1)/len(stocks_to_scan),
                      text=f"Fetching {stock['symbol']}...")
-        r = analyse(obj, stock)
+        # Try up to 3 times with increasing delay
+        r = None
+        for attempt in range(3):
+            r = analyse(obj, stock)
+            if r:
+                break
+            time.sleep(1.0 * (attempt + 1))  # 1s, 2s, 3s
         if r:
             results.append(r)
         else:
-            # Retry once after a short wait
-            time.sleep(0.5)
-            r = analyse(obj, stock)
-            if r:
-                results.append(r)
-            else:
-                errors.append(stock["symbol"])
-        time.sleep(0.3)  # rate limit buffer
+            errors.append(stock["symbol"])
+        time.sleep(0.5)  # rate limit buffer between stocks
     bar.empty()
 
     if errors:
