@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import pyotp
 from datetime import datetime, timedelta
+import pytz
 
 st.set_page_config(
     page_title="Vedhi Finance | Stock Scanner",
@@ -223,7 +224,7 @@ if run_scan:
     bar.empty()
 
     if errors:
-        st.caption(f"⚠️ Could not fetch: {', '.join(errors)}")
+        st.caption(f"⚠️ Could not fetch: {', '.join(errors)} — likely no data yet (market may be closed or token issue)")
 
     if not results:
         st.error("No data returned. Session may have expired — reconnect from sidebar.")
@@ -238,7 +239,7 @@ if run_scan:
     m1.metric("Scanned",        len(results))
     m2.metric("✅ Buy Setups",  buy_setups)
     m3.metric("⚠️ Partial",    partial)
-    m4.metric("🕐 Time",        datetime.now().strftime("%I:%M %p"))
+    m4.metric("🕐 Time",        datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M %p IST"))
 
     st.divider()
 
