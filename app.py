@@ -76,14 +76,32 @@ def get_nifty50_tokens():
         data = r.json()
         tokens = {}
         for item in data:
-            sym  = item.get("symbol","").upper()
-            exch = item.get("exch_seg","")
-            inst = item.get("instrumenttype","")
-            # NSE equity only (no futures/options)
-            if exch == "NSE" and inst == "":
+            sym   = item.get("symbol","").upper()
+            exch  = item.get("exch_seg","")
+            inst  = item.get("instrumenttype","")
+            name  = item.get("name","").upper()
+            # NSE equity: exch=NSE, instrumenttype blank, 
+            # and symbol matches name (not a derivative)
+            # Also exclude -BE, -BL, -IL suffixed symbols
+            if (exch == "NSE" 
+                and inst == "" 
+                and "-" not in sym
+                and not sym.endswith("EQ") == False
+                and sym == name):
+                tokens[sym] = item.get("token","")
+        # Fallback: if sym not found via name match, try EQ series
+        for item in data:
+            sym   = item.get("symbol","").upper()
+            exch  = item.get("exch_seg","")
+            series = item.get("series","").upper()
+            if exch == "NSE" and series == "EQ":
+                clean = sym.replace("-EQ","").replace("EQ","")
+                if clean not in tokens:
+                    tokens[clean] = item.get("token","")
+                # Also store with original symbol
                 tokens[sym] = item.get("token","")
         return tokens
-    except:
+    except Exception as e:
         return {}
 
 MY5 = ["SBIN","BEL","ICICIBANK","RELIANCE","LT"]
