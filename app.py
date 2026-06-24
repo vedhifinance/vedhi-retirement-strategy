@@ -65,6 +65,27 @@ ALL_STOCKS = [
     {"symbol":"ZOMATO",     "token":"5097",  "name":"Zomato"},
 ]
 
+
+@st.cache_data(ttl=86400)  # cache for 24 hours
+def get_nifty50_tokens():
+    """Fetch correct token IDs from Angel One instrument master."""
+    import requests
+    try:
+        url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+        r = requests.get(url, timeout=20)
+        data = r.json()
+        tokens = {}
+        for item in data:
+            sym  = item.get("symbol","").upper()
+            exch = item.get("exch_seg","")
+            inst = item.get("instrumenttype","")
+            # NSE equity only (no futures/options)
+            if exch == "NSE" and inst == "":
+                tokens[sym] = item.get("token","")
+        return tokens
+    except:
+        return {}
+
 MY5 = ["SBIN","BEL","ICICIBANK","RELIANCE","LT"]
 MY5_STOCKS = [s for s in ALL_STOCKS if s["symbol"] in MY5]
 
@@ -116,12 +137,14 @@ def calc_rsi(s, p=14):
 def calc_ema(s, p):
     return s.ewm(span=p, adjust=False).mean()
 
-def analyse(obj, stock):
+def analyse(obj, stock, token_map=None):
     try:
+        # Use live token from instrument master if available
+        token = token_map.get(stock["symbol"], stock["token"]) if token_map else stock["token"]
         to_dt = datetime.now().strftime("%Y-%m-%d %H:%M")
         fr_dt = (datetime.now() - timedelta(days=300)).strftime("%Y-%m-%d %H:%M")
         resp  = obj.getCandleData({
-            "exchange": "NSE", "symboltoken": stock["token"],
+            "exchange": "NSE", "symboltoken": token,
             "interval": "ONE_DAY", "fromdate": fr_dt, "todate": to_dt
         })
         if not resp or not resp.get("status") or not resp.get("data"):
@@ -213,10 +236,14 @@ if run_scan:
     errors  = []
     bar     = st.progress(0)
 
+    # Fetch live tokens from Angel One instrument master
+    with st.spinner("Loading instrument tokens..."):
+        token_map = get_nifty50_tokens()
+
     for i, stock in enumerate(stocks_to_scan):
         bar.progress((i+1)/len(stocks_to_scan),
                      text=f"Fetching {stock['symbol']}...")
-        r = analyse(obj, stock)
+        r = analyse(obj, stock, token_map)
         if r:
             results.append(r)
         else:
