@@ -175,11 +175,18 @@ def analyse(obj, stock):
         if passed == 4 and f5:
             signal = "✅ BUY SETUP"
         elif passed == 4:
-            signal = "⚠️ Watch"
-        elif passed >= 3:
-            signal = "🔍 Partial"
+            signal = "⚠️ Watch (red candle)"
+        elif passed >= 3 and f1:
+            # RSI in zone + 2 other filters = genuine partial setup
+            signal = "🔍 Partial — watch"
+        elif not f1 and r_rsi > 60:
+            # RSI overbought — already ran up, wait for pullback
+            signal = "⏳ Wait — RSI overbought"
+        elif not f1 and r_rsi < 35:
+            # RSI too oversold — falling knife
+            signal = "⚠️ RSI too low — wait"
         elif not f2 or not f3:
-            signal = "❌ Avoid"
+            signal = "❌ Avoid — trend weak"
         else:
             signal = "— Monitor"
 
