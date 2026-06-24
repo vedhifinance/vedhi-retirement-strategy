@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pyotp
-from datetime import datetime, timedelta
 import pytz
+from datetime import datetime, timedelta
 
 st.set_page_config(
     page_title="Vedhi Finance | Stock Scanner",
@@ -11,7 +11,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── All Nifty 50 ───────────────────────────────────────────────────────────────
+# ── All Nifty 50 — verified tokens + EQ suffix ────────────────────────────────
 ALL_STOCKS = [
     {"symbol":"ADANIENT",   "token":"25",    "name":"Adani Enterprises"},
     {"symbol":"ADANIPORTS", "token":"15083", "name":"Adani Ports"},
@@ -40,7 +40,7 @@ ALL_STOCKS = [
     {"symbol":"ITC",        "token":"1660",  "name":"ITC"},
     {"symbol":"INDUSINDBK", "token":"5258",  "name":"IndusInd Bank"},
     {"symbol":"INFY",       "token":"1594",  "name":"Infosys"},
-    {"symbol":"JSWSTEEL",   "token":"3001",  "name":"JSW Steel"},
+    {"symbol":"JSWSTEEL",   "token":"11723", "name":"JSW Steel"},
     {"symbol":"KOTAKBANK",  "token":"1922",  "name":"Kotak Bank"},
     {"symbol":"LT",         "token":"11483", "name":"Larsen & Toubro"},
     {"symbol":"LTIM",       "token":"17818", "name":"LTIMindtree"},
@@ -65,55 +65,16 @@ ALL_STOCKS = [
     {"symbol":"ZOMATO",     "token":"5097",  "name":"Zomato"},
 ]
 
-
-@st.cache_data(ttl=86400)  # cache for 24 hours
-def get_nifty50_tokens():
-    """Fetch correct token IDs from Angel One instrument master."""
-    import requests
-    try:
-        url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
-        r = requests.get(url, timeout=20)
-        data = r.json()
-        tokens = {}
-        for item in data:
-            sym   = item.get("symbol","").upper()
-            exch  = item.get("exch_seg","")
-            inst  = item.get("instrumenttype","")
-            name  = item.get("name","").upper()
-            # NSE equity: exch=NSE, instrumenttype blank, 
-            # and symbol matches name (not a derivative)
-            # Also exclude -BE, -BL, -IL suffixed symbols
-            if (exch == "NSE" 
-                and inst == "" 
-                and "-" not in sym
-                and not sym.endswith("EQ") == False
-                and sym == name):
-                tokens[sym] = item.get("token","")
-        # Fallback: if sym not found via name match, try EQ series
-        for item in data:
-            sym   = item.get("symbol","").upper()
-            exch  = item.get("exch_seg","")
-            series = item.get("series","").upper()
-            if exch == "NSE" and series == "EQ":
-                clean = sym.replace("-EQ","").replace("EQ","")
-                if clean not in tokens:
-                    tokens[clean] = item.get("token","")
-                # Also store with original symbol
-                tokens[sym] = item.get("token","")
-        return tokens
-    except Exception as e:
-        return {}
-
 MY5 = ["SBIN","BEL","ICICIBANK","RELIANCE","LT"]
 MY5_STOCKS = [s for s in ALL_STOCKS if s["symbol"] in MY5]
 
 if "smart_api" not in st.session_state: st.session_state.smart_api = None
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "logged_in"  not in st.session_state: st.session_state.logged_in  = False
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🔐 Angel One Login")
-    st.caption("Credentials stay in your browser only — never saved to GitHub.")
+    st.caption("Credentials stay in your browser only.")
     api_key     = st.text_input("API Key",        type="password")
     client_id   = st.text_input("Client ID")
     password    = st.text_input("PIN / Password", type="password")
@@ -155,16 +116,23 @@ def calc_rsi(s, p=14):
 def calc_ema(s, p):
     return s.ewm(span=p, adjust=False).mean()
 
-def analyse(obj, stock, token_map=None):
+def analyse(obj, stock):
     try:
-        # Use live token from instrument master if available
-        token = token_map.get(stock["symbol"], stock["token"]) if token_map else stock["token"]
-        to_dt = datetime.now().strftime("%Y-%m-%d %H:%M")
-        fr_dt = (datetime.now() - timedelta(days=300)).strftime("%Y-%m-%d %H:%M")
-        resp  = obj.getCandleData({
-            "exchange": "NSE", "symboltoken": token,
-            "interval": "ONE_DAY", "fromdate": fr_dt, "todate": to_dt
+        ist      = pytz.timezone("Asia/Kolkata")
+        to_dt    = datetime.now(ist).strftime("%Y-%m-%d %H:%M")
+        fr_dt    = (datetime.now(ist) - timedelta(days=300)).strftime("%Y-%m-%d %H:%M")
+
+        # Angel One requires SYMBOL-EQ format for tradingsymbol in candle API
+        trading_symbol = stock["symbol"] + "-EQ"
+
+        resp = obj.getCandleData({
+            "exchange":    "NSE",
+            "symboltoken": stock["token"],
+            "interval":    "ONE_DAY",
+            "fromdate":    fr_dt,
+            "todate":      to_dt,
         })
+
         if not resp or not resp.get("status") or not resp.get("data"):
             return None
         if len(resp["data"]) < 60:
@@ -177,11 +145,11 @@ def analyse(obj, stock, token_map=None):
         close    = df["c"]
         volume   = df["v"]
 
-        r14  = calc_rsi(close, 14)
-        e20  = calc_ema(close, 20)
-        e50  = calc_ema(close, 50)
-        e200 = calc_ema(close, 200) if len(close) >= 200 else calc_ema(close, len(close))
-        vavg = volume.rolling(20).mean()
+        r14   = calc_rsi(close, 14)
+        e20   = calc_ema(close, 20)
+        e50   = calc_ema(close, 50)
+        e200  = calc_ema(close, 200) if len(close) >= 200 else calc_ema(close, len(close))
+        vavg  = volume.rolling(20).mean()
 
         price     = float(close.iloc[-1])
         prev      = float(close.iloc[-2])
@@ -190,7 +158,8 @@ def analyse(obj, stock, token_map=None):
         r_e20     = float(e20.iloc[-1])
         r_e50     = float(e50.iloc[-1])
         r_e200    = float(e200.iloc[-1])
-        vol_ratio = float(volume.iloc[-1]) / float(vavg.iloc[-1]) if float(vavg.iloc[-1]) > 0 else 0
+        vol_ratio = float(volume.iloc[-1]) / float(vavg.iloc[-1]) \
+                    if float(vavg.iloc[-1]) > 0 else 0
         pct_200   = (price - r_e200) / r_e200 * 100
         last_open = float(df["o"].iloc[-1])
         candle    = "🟢 Green" if price >= last_open else "🔴 Red"
@@ -214,26 +183,29 @@ def analyse(obj, stock, token_map=None):
             signal = "— Monitor"
 
         return {
-            "Stock":      stock["symbol"],
-            "LTP ₹":      round(price, 2),
-            "Chg %":      round(chg_pct, 2),
-            "RSI":        round(r_rsi, 1),
-            "EMA 20":     round(r_e20, 2),
-            "EMA 50":     round(r_e50, 2),
-            "EMA 200":    round(r_e200, 2),
-            "% vs 200":   round(pct_200, 1),
-            "Vol Ratio":  round(vol_ratio, 2),
-            "Candle":     candle,
-            "Signal":     signal,
-            "_passed":    passed,
-            "_all_pass":  passed == 4 and f5,
+            "Stock":     stock["symbol"],
+            "LTP ₹":     round(price, 2),
+            "Chg %":     round(chg_pct, 2),
+            "RSI":       round(r_rsi, 1),
+            "EMA 20":    round(r_e20, 2),
+            "EMA 50":    round(r_e50, 2),
+            "EMA 200":   round(r_e200, 2),
+            "% vs 200":  round(pct_200, 1),
+            "Vol Ratio": round(vol_ratio, 2),
+            "Candle":    candle,
+            "Signal":    signal,
+            "_passed":   passed,
+            "_all_pass": passed == 4 and f5,
         }
-    except:
+    except Exception as e:
         return None
 
 # ── Header ─────────────────────────────────────────────────────────────────────
+ist = pytz.timezone("Asia/Kolkata")
+now_ist = datetime.now(ist).strftime("%d %b %Y, %I:%M %p IST")
+
 st.title("📡 Vedhi Finance — Stock Scanner")
-st.caption("Live NSE data via Angel One · RSI 35–45 · Price > EMA50 · EMA20 > EMA50 · Volume > 1.2× avg")
+st.caption(f"Live NSE data via Angel One · RSI 35–45 · Price > EMA50 · EMA20 > EMA50 · Volume > 1.2× avg · {now_ist}")
 st.divider()
 
 if not st.session_state.logged_in:
@@ -254,14 +226,10 @@ if run_scan:
     errors  = []
     bar     = st.progress(0)
 
-    # Fetch live tokens from Angel One instrument master
-    with st.spinner("Loading instrument tokens..."):
-        token_map = get_nifty50_tokens()
-
     for i, stock in enumerate(stocks_to_scan):
         bar.progress((i+1)/len(stocks_to_scan),
                      text=f"Fetching {stock['symbol']}...")
-        r = analyse(obj, stock, token_map)
+        r = analyse(obj, stock)
         if r:
             results.append(r)
         else:
@@ -269,7 +237,7 @@ if run_scan:
     bar.empty()
 
     if errors:
-        st.caption(f"⚠️ Could not fetch: {', '.join(errors)} — likely no data yet (market may be closed or token issue)")
+        st.caption(f"⚠️ Could not fetch: {', '.join(errors)}")
 
     if not results:
         st.error("No data returned. Session may have expired — reconnect from sidebar.")
@@ -280,19 +248,17 @@ if run_scan:
     buy_setups = sum(1 for r in results if r["_all_pass"])
     partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Scanned",        len(results))
-    m2.metric("✅ Buy Setups",  buy_setups)
-    m3.metric("⚠️ Partial",    partial)
-    m4.metric("🕐 Time",        datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%I:%M %p IST"))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Stocks Scanned",   len(results))
+    c2.metric("✅ Buy Setups",    buy_setups)
+    c3.metric("⚠️ Partial Match", partial)
 
     st.divider()
 
-    # Plain dataframe — no custom styling
-    df = pd.DataFrame(results).drop(columns=["_passed", "_all_pass"])
+    df = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-    st.caption(f"Scanned at {datetime.now().strftime('%d %b %Y, %I:%M %p')} · Angel One NSE")
+    st.caption(f"Scanned at {datetime.now(ist).strftime('%d %b %Y, %I:%M %p IST')} · Angel One NSE")
 
 else:
     watching = " · ".join([s["symbol"] for s in MY5_STOCKS])
