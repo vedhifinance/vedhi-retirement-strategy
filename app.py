@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, date
 import time
 
 st.set_page_config(
-    page_title="Vedhi Finance | Stock Scanner",
+    page_title="Vedhi Pulse | Nifty 50 Intelligence",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -17,31 +17,140 @@ st.set_page_config(
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { background-color: #0f1117; }
-    .metric-card {
-        background: #1a1d27;
-        border: 1px solid #2a2d3e;
-        border-radius: 10px;
-        padding: 1rem 1.2rem;
-        margin-bottom: 0.5rem;
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Inter:wght@400;500;600&display=swap');
+
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+    .main { background-color: #ffffff; }
+
+    /* ── Vedhi Pulse wordmark ── */
+    .vp-wordmark {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 2.6rem;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 0.15rem;
+        letter-spacing: -0.5px;
     }
-    .profit-positive { color: #00c896; font-weight: 600; }
-    .profit-negative { color: #ff4b6e; font-weight: 600; }
-    .section-header {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #a0aec0;
-        margin: 1rem 0 0.5rem 0;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.75rem;
-    }
-    div[data-testid="stTabs"] button {
-        font-size: 0.95rem;
+    .vp-wordmark .vedhi  { color: #0f172a; font-style: italic; }
+    .vp-wordmark .pulse  { color: #16a34a; font-style: italic; margin-left: 6px; }
+
+    /* ── Tagline ── */
+    .vp-tagline {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.72rem;
         font-weight: 500;
+        color: #94a3b8;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-bottom: 0.6rem;
     }
+
+    /* ── LIVE badge ── */
+    .vp-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #15803d;
+        letter-spacing: 0.08em;
+    }
+    .vp-live-dot {
+        width: 7px; height: 7px;
+        background: #16a34a;
+        border-radius: 50%;
+        animation: pulse-dot 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50%       { opacity: 0.4; transform: scale(0.75); }
+    }
+
+    /* ── Divider ── */
+    .vp-divider {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 0.9rem 0 1.1rem 0;
+    }
+
+    /* ── Section labels ── */
+    .section-header {
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin: 1rem 0 0.4rem 0;
+    }
+
+    /* ── Tabs ── */
+    div[data-testid="stTabs"] button {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #64748b;
+    }
+    div[data-testid="stTabs"] button[aria-selected="true"] {
+        color: #0f172a;
+        font-weight: 600;
+        border-bottom: 2px solid #16a34a;
+    }
+
+    /* ── Data table ── */
     .stDataFrame { border-radius: 10px; overflow: hidden; }
 
+    /* ── Metric cards (portfolio summary) ── */
+    .vp-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+    }
+    .vp-card-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        margin-bottom: 4px;
+    }
+    .vp-card-value {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .vp-card-delta {
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+
+    /* Buttons */
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background: #16a34a;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        letter-spacing: 0.02em;
+    }
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
+        background: #15803d;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background: #f8fafc;
+        border-right: 1px solid #e2e8f0;
+    }
+
+    /* Light background for main area */
+    .block-container { background: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -302,11 +411,28 @@ with st.sidebar:
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 ist     = pytz.timezone("Asia/Kolkata")
-now_ist = datetime.now(ist).strftime("%d %b %Y, %I:%M %p IST")
+now_ist = datetime.now(ist).strftime("%d %b %Y  ·  %I:%M %p IST")
+conn_status = "🟢 Connected" if st.session_state.logged_in else "⚪ Not connected"
 
-st.title("📡 Vedhi Finance")
-st.caption(f"Stock Scanner + Portfolio Tracker · {now_ist}")
-st.divider()
+st.markdown(f"""
+<div style="display:flex;justify-content:space-between;align-items:flex-start;
+            flex-wrap:wrap;gap:0.5rem;padding-bottom:0.2rem">
+  <div>
+    <div class="vp-wordmark">
+      <span class="vedhi">Vedhi</span><span class="pulse">Pulse</span>
+    </div>
+    <div class="vp-tagline">Nifty 50 Intelligence &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Live Market Data</div>
+    <div class="vp-live">
+      <span class="vp-live-dot"></span> LIVE
+    </div>
+  </div>
+  <div style="text-align:right;font-size:0.75rem;color:#94a3b8;line-height:1.7">
+    <div style="font-weight:500;color:#64748b">{now_ist}</div>
+    <div>{conn_status}</div>
+  </div>
+</div>
+<hr class="vp-divider">
+""", unsafe_allow_html=True)
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 tab_scan, tab_port, tab_hist = st.tabs([
@@ -368,17 +494,13 @@ with tab_scan:
 
             st.markdown(f"""
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
-  <div style="flex:1;min-width:120px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.8rem 1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">Stocks Scanned</div>
-    <div style="font-size:1.4rem;font-weight:700;color:#e2e8f0">{len(results)}</div>
+  <div class="vp-card" style="flex:1;min-width:120px">
+    <div class="vp-card-label">Stocks Scanned</div>
+    <div class="vp-card-value">{len(results)}</div>
   </div>
-  <div style="flex:1;min-width:120px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.8rem 1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">✅ Buy Setups</div>
-    <div style="font-size:1.4rem;font-weight:700;color:#00c896">{buy_setups}</div>
+  <div class="vp-card" style="flex:1;min-width:120px">
+    <div class="vp-card-label">Buy Setups</div>
+    <div class="vp-card-value" style="color:#16a34a">{buy_setups}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -426,34 +548,26 @@ with tab_port:
         total_pnl      = total_current - total_invested
         total_pnl_pct  = (total_pnl / total_invested * 100) if total_invested else 0
 
-        pnl_col  = "#00c896" if total_pnl >= 0 else "#ff4b6e"
+        pnl_col  = "#16a34a" if total_pnl >= 0 else "#dc2626"
         pnl_sign = "▲" if total_pnl >= 0 else "▼"
         st.markdown(f"""
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
-  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.9rem 1.1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">Total Invested</div>
-    <div style="font-size:1.25rem;font-weight:700;color:#e2e8f0">₹{total_invested:,.2f}</div>
+  <div class="vp-card" style="flex:1;min-width:140px">
+    <div class="vp-card-label">Total Invested</div>
+    <div class="vp-card-value">&#8377;{total_invested:,.2f}</div>
   </div>
-  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.9rem 1.1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">Current Value</div>
-    <div style="font-size:1.25rem;font-weight:700;color:#e2e8f0">₹{total_current:,.2f}</div>
+  <div class="vp-card" style="flex:1;min-width:140px">
+    <div class="vp-card-label">Current Value</div>
+    <div class="vp-card-value">&#8377;{total_current:,.2f}</div>
   </div>
-  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.9rem 1.1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">Unrealised P&amp;L</div>
-    <div style="font-size:1.25rem;font-weight:700;color:{pnl_col}">₹{total_pnl:,.2f}</div>
-    <div style="font-size:0.8rem;color:{pnl_col};margin-top:2px">{pnl_sign} {abs(total_pnl_pct):.2f}%</div>
+  <div class="vp-card" style="flex:1;min-width:140px">
+    <div class="vp-card-label">Unrealised P&amp;L</div>
+    <div class="vp-card-value" style="color:{pnl_col}">&#8377;{total_pnl:,.2f}</div>
+    <div class="vp-card-delta" style="color:{pnl_col}">{pnl_sign} {abs(total_pnl_pct):.2f}%</div>
   </div>
-  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.9rem 1.1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">Holdings</div>
-    <div style="font-size:1.25rem;font-weight:700;color:#e2e8f0">{len(portfolio)}</div>
+  <div class="vp-card" style="flex:1;min-width:140px">
+    <div class="vp-card-label">Holdings</div>
+    <div class="vp-card-value">{len(portfolio)}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -622,23 +736,23 @@ with tab_port:
 
             # ── Result summary card ────────────────────────────────────────────
             st.markdown(
-                f'''<div style="background:#1a1d27;border:1px solid #2a2d3e;border-radius:10px;
+                f'''<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;
                             padding:1rem 1.3rem;margin:0.6rem 0 0.8rem 0;font-family:sans-serif">
   <div style="display:grid;grid-template-columns:auto 1fr;
               row-gap:0.35rem;column-gap:1.5rem;align-items:center">
-    <span style="font-size:0.8rem;color:#6b7280">Buy Value</span>
-    <span style="font-size:0.88rem;color:#e2e8f0;text-align:right">&#8377;{invested_sel:,.2f}</span>
-    <span style="font-size:0.8rem;color:#6b7280">Sell Value</span>
-    <span style="font-size:0.88rem;color:#e2e8f0;text-align:right">&#8377;{sell_val:,.2f}</span>
-    <span style="font-size:0.8rem;color:#6b7280">Gross P&amp;L</span>
+    <span style="font-size:0.8rem;color:#64748b">Buy Value</span>
+    <span style="font-size:0.88rem;color:#0f172a;text-align:right">&#8377;{invested_sel:,.2f}</span>
+    <span style="font-size:0.8rem;color:#64748b">Sell Value</span>
+    <span style="font-size:0.88rem;color:#0f172a;text-align:right">&#8377;{sell_val:,.2f}</span>
+    <span style="font-size:0.8rem;color:#64748b">Gross P&amp;L</span>
     <span style="font-size:0.88rem;font-weight:600;color:{pnl_col};text-align:right">&#8377;{gross_pnl:,.2f}</span>
-    <span style="font-size:0.8rem;color:#6b7280">Charges ({brok_label})</span>
-    <span style="font-size:0.88rem;color:#9ca3af;text-align:right">&#8377;{total_brok:.2f}</span>
-    <span style="font-size:0.8rem;color:#6b7280">Held</span>
-    <span style="font-size:0.88rem;color:#9ca3af;text-align:right">{hold_days} days</span>
-    <div style="border-top:1px solid #374151;padding-top:0.4rem;
-                font-size:0.9rem;font-weight:700;color:#e2e8f0">Net P&amp;L</div>
-    <div style="border-top:1px solid #374151;padding-top:0.4rem;
+    <span style="font-size:0.8rem;color:#64748b">Charges ({brok_label})</span>
+    <span style="font-size:0.88rem;color:#64748b;text-align:right">&#8377;{total_brok:.2f}</span>
+    <span style="font-size:0.8rem;color:#64748b">Held</span>
+    <span style="font-size:0.88rem;color:#64748b;text-align:right">{hold_days} days</span>
+    <div style="border-top:1px solid #e2e8f0;padding-top:0.4rem;
+                font-size:0.9rem;font-weight:700;color:#0f172a">Net P&amp;L</div>
+    <div style="border-top:1px solid #e2e8f0;padding-top:0.4rem;
                 font-size:1.05rem;font-weight:700;color:{pnl_col};text-align:right">
       {pnl_sign}&#8377;{net_pnl:,.2f} &nbsp;({pnl_sign}{net_pnl_pct:.2f}%)</div>
   </div>
