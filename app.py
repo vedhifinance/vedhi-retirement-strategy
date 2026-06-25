@@ -539,10 +539,13 @@ with tab_port:
                     key="sell_qty"
                 )
             with sell_col2:
+                # Use LTP if it differs from avg_price, else default to avg_price
+                _ltp_val = sel_holding.get("ltp", sel_holding["avg_price"])
+                _sell_default = float(_ltp_val) if float(_ltp_val) != float(sel_holding["avg_price"]) else float(sel_holding["avg_price"])
                 sell_price = st.number_input(
-                    "Sell Price ₹",
+                    "Sell Price ₹  ← enter your actual sell price",
                     min_value=0.01,
-                    value=float(sel_holding.get("ltp", sel_holding["avg_price"])),
+                    value=_sell_default,
                     step=0.05, format="%.2f",
                     key="sell_price"
                 )
@@ -557,21 +560,18 @@ with tab_port:
             invested_sel = sel_holding["avg_price"] * sell_qty
             net_pnl_pct  = (net_pnl / invested_sel * 100) if invested_sel else 0
             hold_days    = (sell_date - date.fromisoformat(sel_holding["buy_date"])).days
-            pnl_color    = "#00c896" if net_pnl >= 0 else "#ff4b6e"
 
-            st.markdown(f"""
-<div style="background:#1a1d27;border:1px solid #2a2d3e;border-radius:10px;padding:1rem 1.5rem;margin:0.75rem 0">
-  <div style="display:flex;gap:2rem;flex-wrap:wrap">
-    <div><span style="color:#6b7280;font-size:0.78rem">INVESTED</span><br><span style="font-size:1.1rem;font-weight:600">₹{invested_sel:,.2f}</span></div>
-    <div><span style="color:#6b7280;font-size:0.78rem">GROSS P&L</span><br><span style="font-size:1.1rem;font-weight:600;color:{pnl_color}">₹{gross_pnl:,.2f}</span></div>
-    <div><span style="color:#6b7280;font-size:0.78rem">BROKERAGE</span><br><span style="font-size:1.1rem;font-weight:600">₹{brok_only:.2f}</span></div>
-    <div><span style="color:#6b7280;font-size:0.78rem">STT</span><br><span style="font-size:1.1rem;font-weight:600">₹{stt_only:.2f}</span></div>
-    <div><span style="color:#6b7280;font-size:0.78rem">OTHER</span><br><span style="font-size:1.1rem;font-weight:600">₹{total_brok - brok_only - stt_only:.2f}</span></div>
-    <div><span style="color:#6b7280;font-size:0.78rem">NET P&L</span><br><span style="font-size:1.3rem;font-weight:700;color:{pnl_color}">₹{net_pnl:,.2f} &nbsp;({net_pnl_pct:.2f}%)</span></div>
-    <div><span style="color:#6b7280;font-size:0.78rem">HELD</span><br><span style="font-size:1.1rem;font-weight:600">{hold_days} days</span></div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+            st.markdown("**📊 P&L Breakdown**")
+            pc1, pc2, pc3, pc4, pc5, pc6, pc7 = st.columns(7)
+            pc1.metric("Invested ₹",  f"{invested_sel:,.2f}")
+            pc2.metric("Gross P&L ₹", f"{gross_pnl:,.2f}",
+                       delta=f"{gross_pnl/invested_sel*100:.2f}%" if invested_sel else "0%")
+            pc3.metric("Brokerage ₹", f"{brok_only:.2f}")
+            pc4.metric("STT ₹",        f"{stt_only:.2f}")
+            pc5.metric("Other ₹",      f"{total_brok - brok_only - stt_only:.2f}")
+            pc6.metric("Net P&L ₹",   f"{net_pnl:,.2f}",
+                       delta=f"{net_pnl_pct:.2f}%")
+            pc7.metric("Held",         f"{hold_days} days")
 
             if st.button("✅ Confirm Sell & Record to History",
                          use_container_width=True, type="primary", key="confirm_sell"):
