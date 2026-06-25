@@ -237,7 +237,7 @@ def analyse(obj, stock):
         elif passed == 4:
             signal = "⚠️ Watch (red candle)"
         elif passed >= 3 and f1:
-            signal = "🔍 Partial — watch"
+            signal = "— Monitor"
         elif not f1 and r_rsi > 60:
             signal = "⏳ Wait — RSI overbought"
         elif not f1 and r_rsi < 35:
@@ -365,7 +365,6 @@ with tab_scan:
             results.sort(key=lambda x: (-x["_all_pass"], -x["_passed"]))
 
             buy_setups = sum(1 for r in results if r["_all_pass"])
-            partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
 
             st.markdown(f"""
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
@@ -380,12 +379,6 @@ with tab_scan:
     <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
                 letter-spacing:0.06em">✅ Buy Setups</div>
     <div style="font-size:1.4rem;font-weight:700;color:#00c896">{buy_setups}</div>
-  </div>
-  <div style="flex:1;min-width:120px;background:#1a1d27;border:1px solid #2a2d3e;
-              border-radius:10px;padding:0.8rem 1rem">
-    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
-                letter-spacing:0.06em">⚠️ Partial Match</div>
-    <div style="font-size:1.4rem;font-weight:700;color:#f59e0b">{partial}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
