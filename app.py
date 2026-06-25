@@ -41,6 +41,27 @@ st.markdown("""
         font-weight: 500;
     }
     .stDataFrame { border-radius: 10px; overflow: hidden; }
+    /* Compact metrics for P&L breakdown */
+    [data-testid="stMetric"] {
+        background: #1a1d27;
+        border: 1px solid #2a2d3e;
+        border-radius: 8px;
+        padding: 0.4rem 0.6rem !important;
+    }
+    [data-testid="stMetricLabel"] p {
+        font-size: 0.65rem !important;
+        color: #6b7280 !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.75rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,6 +167,28 @@ def calc_brokerage(buy_price, sell_price, qty):
     stamp     = buy_val * STAMP_RATE
     total     = brok_buy + brok_sell + stt + exchange + sebi + stamp
     return round(total, 2), round(brok_buy + brok_sell, 2), round(stt, 2)
+
+# ── Live LTP fetch via Angel One ──────────────────────────────────────────────
+def fetch_live_ltp(obj, symbols_list):
+    """Fetch live LTP for a list of symbols from Angel One market quote API.
+    Returns dict {symbol: ltp}"""
+    ltp_map = {}
+    if not obj:
+        return ltp_map
+    # Build token map for lookup
+    token_map = {s["symbol"]: s["token"] for s in ALL_STOCKS}
+    for sym in symbols_list:
+        try:
+            token = token_map.get(sym)
+            if not token:
+                continue
+            resp = obj.ltpData("NSE", sym + "-EQ", token)
+            if resp and resp.get("status") and resp.get("data"):
+                ltp_map[sym] = round(float(resp["data"]["ltp"]), 2)
+            time.sleep(0.15)  # gentle rate limit
+        except Exception:
+            pass
+    return ltp_map
 
 # ── Indicators ────────────────────────────────────────────────────────────────
 def calc_rsi(s, p=14):
@@ -362,58 +405,72 @@ with tab_port:
     portfolio = load_portfolio()
     history   = load_history()
 
-    # ── Summary metrics ────────────────────────────────────────────────────────
     st.markdown('<p class="section-header">Current Holdings</p>', unsafe_allow_html=True)
 
+    # ── Live LTP refresh button ────────────────────────────────────────────────
+    if portfolio and st.session_state.logged_in:
+        rf_col1, rf_col2 = st.columns([2, 5])
+        with rf_col1:
+            if st.button("🔴 Refresh Live LTP", use_container_width=True):
+                with st.spinner("Fetching live prices from Angel One..."):
+                    syms = [h["symbol"] for h in portfolio]
+                    ltp_map = fetch_live_ltp(st.session_state.smart_api, syms)
+                    updated = 0
+                    for h in portfolio:
+                        if h["symbol"] in ltp_map:
+                            h["ltp"] = ltp_map[h["symbol"]]
+                            updated += 1
+                    save_portfolio(portfolio)
+                    st.success(f"✅ Updated {updated}/{len(syms)} live prices")
+                    st.rerun()
+        with rf_col2:
+            st.caption("Fetches real-time LTP from Angel One for all holdings · click after market opens")
+    elif portfolio and not st.session_state.logged_in:
+        st.caption("🔌 Connect Angel One from sidebar to enable live LTP refresh")
+
+    # ── Summary metrics ────────────────────────────────────────────────────────
     if portfolio:
         total_invested = sum(h["qty"] * h["avg_price"] for h in portfolio)
-        # Current value — use LTP if available, else avg_price
         total_current  = sum(h["qty"] * h.get("ltp", h["avg_price"]) for h in portfolio)
         total_pnl      = total_current - total_invested
         total_pnl_pct  = (total_pnl / total_invested * 100) if total_invested else 0
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Invested",  f"₹{total_invested:,.0f}")
-        m2.metric("Current Value",   f"₹{total_current:,.0f}")
-        m3.metric("Unrealised P&L",
-                  f"₹{total_pnl:,.0f}",
+        m1.metric("Total Invested",  f"₹{total_invested:,.2f}")
+        m2.metric("Current Value",   f"₹{total_current:,.2f}")
+        m3.metric("Unrealised P&L",  f"₹{total_pnl:,.2f}",
                   delta=f"{total_pnl_pct:.2f}%")
         m4.metric("Holdings",        len(portfolio))
         st.divider()
 
     # ── Add new position ───────────────────────────────────────────────────────
     with st.expander("➕ Add New Position", expanded=len(portfolio) == 0):
-        st.markdown('<p class="section-header">Enter Trade Details</p>', unsafe_allow_html=True)
-
         all_symbols = sorted([s["symbol"] for s in ALL_STOCKS])
-        # Also allow free-text for stocks not in Nifty 50
         col1, col2 = st.columns(2)
         with col1:
             symbol_select = st.selectbox("Stock Symbol (Nifty 50)", [""] + all_symbols)
             symbol_custom = st.text_input("Or type custom symbol", placeholder="e.g. ONGC, NTPC")
-            symbol = (symbol_custom.strip().upper() if symbol_custom.strip()
-                      else symbol_select)
+            symbol = (symbol_custom.strip().upper() if symbol_custom.strip() else symbol_select)
         with col2:
             buy_date = st.date_input("Buy Date", value=date.today())
             qty      = st.number_input("Quantity (shares)", min_value=1, value=1, step=1)
 
         col3, col4 = st.columns(2)
         with col3:
-            avg_price = st.number_input("Buy Price (₹ per share)", min_value=0.01,
+            avg_price = st.number_input("Buy Price ₹", min_value=0.01,
                                         value=100.00, step=0.05, format="%.2f")
         with col4:
-            ltp = st.number_input("Current LTP ₹ (optional, for live P&L)",
-                                  min_value=0.0, value=0.0, step=0.05, format="%.2f")
+            ltp_add = st.number_input("LTP ₹ (leave 0 to auto-fill from buy price)",
+                                      min_value=0.0, value=0.0, step=0.05, format="%.2f")
 
-        notes = st.text_input("Notes (optional)", placeholder="e.g. SMA 200 bounce entry")
+        notes = st.text_input("Notes", placeholder="e.g. SMA 200 bounce entry")
 
-        # Brokerage preview
         if avg_price > 0 and qty > 0:
-            buy_val = avg_price * qty
-            brok_preview = min(buy_val * BROKERAGE_RATE, 20)
+            buy_val       = avg_price * qty
+            brok_preview  = min(buy_val * BROKERAGE_RATE, 20)
             stamp_preview = buy_val * STAMP_RATE
-            st.caption(f"Est. buy-side cost: Brokerage ₹{brok_preview:.2f} + Stamp ₹{stamp_preview:.2f}"
-                       f" = ₹{brok_preview+stamp_preview:.2f}")
+            st.caption(f"Est. buy cost: ₹{brok_preview + stamp_preview:.2f} "
+                       f"(brokerage ₹{brok_preview:.2f} + stamp ₹{stamp_preview:.2f})")
 
         if st.button("💾 Add to Portfolio", use_container_width=True):
             if not symbol:
@@ -426,29 +483,26 @@ with tab_port:
                     "avg_price":    round(float(avg_price), 2),
                     "buy_date":     str(buy_date),
                     "holding_days": holding_days,
-                    "ltp":          round(float(ltp), 2) if ltp > 0 else round(float(avg_price), 2),
+                    "ltp":          round(float(ltp_add), 2) if ltp_add > 0 else round(float(avg_price), 2),
                     "notes":        notes,
                     "added_on":     str(date.today()),
                 }
-                # If same symbol exists, ask to merge (average down/up)
                 existing = [p for p in portfolio if p["symbol"] == symbol]
                 if existing:
-                    # Weighted average
-                    ex = existing[0]
-                    total_qty   = ex["qty"] + int(qty)
-                    new_avg     = (ex["qty"] * ex["avg_price"] + int(qty) * float(avg_price)) / total_qty
-                    ex["qty"]       = total_qty
-                    ex["avg_price"] = round(new_avg, 2)
+                    ex        = existing[0]
+                    total_qty = ex["qty"] + int(qty)
+                    new_avg   = (ex["qty"] * ex["avg_price"] + int(qty) * float(avg_price)) / total_qty
+                    ex["qty"]          = total_qty
+                    ex["avg_price"]    = round(new_avg, 2)
                     ex["holding_days"] = (date.today() - date.fromisoformat(ex["buy_date"])).days
-                    if ltp > 0:
-                        ex["ltp"] = round(float(ltp), 2)
+                    if ltp_add > 0:
+                        ex["ltp"] = round(float(ltp_add), 2)
                     if notes:
                         ex["notes"] = (ex.get("notes","") + " | " + notes).strip(" | ")
                     st.success(f"✅ Averaged {symbol} — new avg ₹{new_avg:.2f} × {total_qty} shares")
                 else:
                     portfolio.append(new_pos)
                     st.success(f"✅ Added {symbol} — {qty} shares @ ₹{avg_price:.2f}")
-
                 save_portfolio(portfolio)
                 st.rerun()
 
@@ -461,117 +515,108 @@ with tab_port:
             qty_h      = h["qty"]
             avg_h      = h["avg_price"]
             ltp_h      = h.get("ltp", avg_h)
-            invested   = qty_h * avg_h
-            curr_val   = qty_h * ltp_h
-            unreal_pnl = curr_val - invested
-            unreal_pct = (unreal_pnl / invested * 100) if invested else 0
+            invested   = round(qty_h * avg_h, 2)
+            curr_val   = round(qty_h * ltp_h, 2)
+            unreal_pnl = round(curr_val - invested, 2)
+            unreal_pct = round((unreal_pnl / invested * 100) if invested else 0, 2)
             hdays      = (date.today() - date.fromisoformat(h["buy_date"])).days
 
             rows.append({
-                "Symbol":        h["symbol"],
-                "Qty":           qty_h,
-                "Avg Price ₹":   avg_h,
-                "LTP ₹":         ltp_h,
-                "Invested ₹":    round(invested, 2),
-                "Curr Value ₹":  round(curr_val, 2),
-                "P&L ₹":         round(unreal_pnl, 2),
-                "P&L %":         round(unreal_pct, 2),
-                "Holding Days":  hdays,
-                "Buy Date":      h["buy_date"],
-                "Notes":         h.get("notes",""),
+                "Symbol":       h["symbol"],
+                "Qty":          qty_h,
+                "Avg ₹":        round(avg_h, 2),
+                "LTP ₹":        round(ltp_h, 2),
+                "Invested ₹":   invested,
+                "Value ₹":      curr_val,
+                "P&L ₹":        unreal_pnl,
+                "P&L %":        unreal_pct,
+                "Days":         hdays,
+                "Buy Date":     h["buy_date"],
+                "Notes":        h.get("notes",""),
             })
 
         df_port = pd.DataFrame(rows)
 
-        # Colour coding
         def colour_pnl(val):
-            color = "#00c896" if val >= 0 else "#ff4b6e"
+            color = "#00c896" if float(val) >= 0 else "#ff4b6e"
             return f"color: {color}; font-weight: 600"
 
-        styled = df_port.style.map(colour_pnl, subset=["P&L ₹","P&L %"])
+        styled = (df_port.style
+                  .map(colour_pnl, subset=["P&L ₹", "P&L %"])
+                  .format({
+                      "Avg ₹":      "{:.2f}",
+                      "LTP ₹":      "{:.2f}",
+                      "Invested ₹": "{:,.2f}",
+                      "Value ₹":    "{:,.2f}",
+                      "P&L ₹":      "{:,.2f}",
+                      "P&L %":      "{:.2f}",
+                  }))
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
-        # ── Update LTP + Sell ──────────────────────────────────────────────────
+        # ── Sell section ───────────────────────────────────────────────────────
         st.divider()
-        st.markdown('<p class="section-header">Update LTP / Sell Position</p>',
-                    unsafe_allow_html=True)
+        st.markdown('<p class="section-header">Sell Position</p>', unsafe_allow_html=True)
 
         symbols_held = [h["symbol"] for h in portfolio]
-        sel_symbol   = st.selectbox("Select holding", symbols_held, key="sel_sym")
+        sel_symbol   = st.selectbox("Select holding to sell", symbols_held, key="sel_sym")
         sel_holding  = next((h for h in portfolio if h["symbol"] == sel_symbol), None)
 
         if sel_holding:
-
-            # ── Row 1: Update LTP ──────────────────────────────────────────────
-            st.markdown("**① Update current price (LTP)**")
-            ltp_col1, ltp_col2 = st.columns([2, 1])
-            with ltp_col1:
-                new_ltp = st.number_input(
-                    f"LTP for {sel_symbol} ₹",
-                    min_value=0.01,
-                    value=float(sel_holding.get("ltp", sel_holding["avg_price"])),
-                    step=0.05, format="%.2f",
-                    key="ltp_input"
-                )
-            with ltp_col2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🔄 Update LTP", use_container_width=True):
-                    for h in portfolio:
-                        if h["symbol"] == sel_symbol:
-                            h["ltp"] = round(float(new_ltp), 2)
-                    save_portfolio(portfolio)
-                    st.success(f"✅ LTP updated → ₹{new_ltp:.2f}")
-                    st.rerun()
-
-            st.divider()
-
-            # ── Row 2: Sell ────────────────────────────────────────────────────
-            st.markdown("**② Sell this position**")
+            cur_ltp = sel_holding.get("ltp", sel_holding["avg_price"])
 
             sell_col1, sell_col2, sell_col3 = st.columns(3)
             with sell_col1:
                 sell_qty = st.number_input(
                     "Sell Quantity",
-                    min_value=1,
-                    max_value=sel_holding["qty"],
-                    value=sel_holding["qty"],
-                    step=1,
-                    key="sell_qty"
-                )
+                    min_value=1, max_value=sel_holding["qty"],
+                    value=sel_holding["qty"], step=1, key="sell_qty")
             with sell_col2:
-                # Use LTP if it differs from avg_price, else default to avg_price
-                _ltp_val = sel_holding.get("ltp", sel_holding["avg_price"])
-                _sell_default = float(_ltp_val) if float(_ltp_val) != float(sel_holding["avg_price"]) else float(sel_holding["avg_price"])
                 sell_price = st.number_input(
-                    "Sell Price ₹  ← enter your actual sell price",
+                    "Sell Price ₹",
                     min_value=0.01,
-                    value=_sell_default,
-                    step=0.05, format="%.2f",
-                    key="sell_price"
-                )
+                    value=round(float(cur_ltp), 2),
+                    step=0.05, format="%.2f", key="sell_price")
             with sell_col3:
                 sell_date = st.date_input("Sell Date", value=date.today(), key="sell_date")
 
-            # Live P&L breakdown — always visible
-            gross_pnl    = (sell_price - sel_holding["avg_price"]) * sell_qty
+            # P&L breakdown
+            gross_pnl    = round((sell_price - sel_holding["avg_price"]) * sell_qty, 2)
             total_brok, brok_only, stt_only = calc_brokerage(
                 sel_holding["avg_price"], sell_price, sell_qty)
-            net_pnl      = gross_pnl - total_brok
-            invested_sel = sel_holding["avg_price"] * sell_qty
-            net_pnl_pct  = (net_pnl / invested_sel * 100) if invested_sel else 0
+            net_pnl      = round(gross_pnl - total_brok, 2)
+            invested_sel = round(sel_holding["avg_price"] * sell_qty, 2)
+            net_pnl_pct  = round((net_pnl / invested_sel * 100) if invested_sel else 0, 2)
             hold_days    = (sell_date - date.fromisoformat(sel_holding["buy_date"])).days
 
             st.markdown("**📊 P&L Breakdown**")
-            pc1, pc2, pc3, pc4, pc5, pc6, pc7 = st.columns(7)
-            pc1.metric("Invested ₹",  f"{invested_sel:,.2f}")
-            pc2.metric("Gross P&L ₹", f"{gross_pnl:,.2f}",
-                       delta=f"{gross_pnl/invested_sel*100:.2f}%" if invested_sel else "0%")
-            pc3.metric("Brokerage ₹", f"{brok_only:.2f}")
-            pc4.metric("STT ₹",        f"{stt_only:.2f}")
-            pc5.metric("Other ₹",      f"{total_brok - brok_only - stt_only:.2f}")
-            pc6.metric("Net P&L ₹",   f"{net_pnl:,.2f}",
-                       delta=f"{net_pnl_pct:.2f}%")
-            pc7.metric("Held",         f"{hold_days} days")
+
+            # Use a compact table instead of metrics to avoid truncation
+            breakdown_data = {
+                "Item": ["Invested", "Sell Value", "Gross P&L", "Brokerage", "STT", "Other", "Net P&L", "Held"],
+                "Amount ₹": [
+                    f"{invested_sel:,.2f}",
+                    f"{sell_price * sell_qty:,.2f}",
+                    f"{gross_pnl:,.2f}",
+                    f"{brok_only:.2f}",
+                    f"{stt_only:.2f}",
+                    f"{total_brok - brok_only - stt_only:.2f}",
+                    f"{net_pnl:,.2f}  ({net_pnl_pct:.2f}%)",
+                    f"{hold_days} days",
+                ],
+            }
+            df_breakdown = pd.DataFrame(breakdown_data)
+
+            def highlight_pnl_row(row):
+                if row["Item"] == "Net P&L":
+                    color = "#00c896" if net_pnl >= 0 else "#ff4b6e"
+                    return [f"font-weight:700; color:{color}", f"font-weight:700; color:{color}"]
+                if row["Item"] == "Gross P&L":
+                    color = "#00c896" if gross_pnl >= 0 else "#ff4b6e"
+                    return ["", f"color:{color}; font-weight:600"]
+                return ["", ""]
+
+            styled_bd = df_breakdown.style.apply(highlight_pnl_row, axis=1)
+            st.dataframe(styled_bd, use_container_width=True, hide_index=True, height=320)
 
             if st.button("✅ Confirm Sell & Record to History",
                          use_container_width=True, type="primary", key="confirm_sell"):
@@ -583,11 +628,11 @@ with tab_port:
                     "qty":          int(sell_qty),
                     "buy_price":    sel_holding["avg_price"],
                     "sell_price":   round(float(sell_price), 2),
-                    "invested":     round(invested_sel, 2),
-                    "gross_pnl":    round(gross_pnl, 2),
+                    "invested":     invested_sel,
+                    "gross_pnl":    gross_pnl,
                     "brokerage":    round(total_brok, 2),
-                    "net_pnl":      round(net_pnl, 2),
-                    "net_pnl_pct":  round(net_pnl_pct, 2),
+                    "net_pnl":      net_pnl,
+                    "net_pnl_pct":  net_pnl_pct,
                     "notes":        sel_holding.get("notes",""),
                     "recorded_on":  str(date.today()),
                 }
@@ -607,14 +652,14 @@ with tab_port:
                            f"| Net P&L: ₹{net_pnl:,.2f} ({net_pnl_pct:.2f}%)")
                 st.rerun()
 
-        # ── Delete a holding ───────────────────────────────────────────────────
+        # ── Remove holding ─────────────────────────────────────────────────────
         st.divider()
         with st.expander("🗑️ Remove a holding without recording a sale"):
             del_symbol = st.selectbox("Select to remove", symbols_held, key="del_sym")
-            if st.button("Remove from portfolio", type="secondary", key="del_btn"):
+            if st.button("Remove", type="secondary", key="del_btn"):
                 portfolio = [h for h in portfolio if h["symbol"] != del_symbol]
                 save_portfolio(portfolio)
-                st.warning(f"Removed {del_symbol} from portfolio.")
+                st.warning(f"Removed {del_symbol}.")
                 st.rerun()
 
     else:
