@@ -415,21 +415,49 @@ now_ist = datetime.now(ist).strftime("%d %b %Y  ·  %I:%M %p IST")
 conn_status = "🟢 Connected" if st.session_state.logged_in else "⚪ Not connected"
 
 st.markdown(f"""
-<div style="display:flex;justify-content:space-between;align-items:flex-start;
-            flex-wrap:wrap;gap:0.5rem;padding-bottom:0.2rem">
-  <div>
-    <div class="vp-wordmark">
-      <span class="vedhi">Vedhi</span><span class="pulse">Pulse</span>
-    </div>
-    <div class="vp-tagline">Nifty 50 Intelligence &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Live Market Data</div>
-    <div class="vp-live">
-      <span class="vp-live-dot"></span> LIVE
+<div style="display:flex;justify-content:space-between;align-items:center;
+            flex-wrap:wrap;gap:1rem;padding-bottom:0.4rem">
+
+  <!-- Left: logo mark + wordmark + tagline -->
+  <div style="display:flex;align-items:center;gap:16px">
+
+    <!-- Candlestick V logo mark -->
+    <svg width="56" height="64" viewBox="0 0 90 100" xmlns="http://www.w3.org/2000/svg"
+         style="flex-shrink:0">
+      <!-- green candle -->
+      <rect x="10" y="22" width="18" height="40" rx="3" fill="#16a34a"/>
+      <line x1="19" y1="10"  x2="19" y2="22" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
+      <line x1="19" y1="62"  x2="19" y2="76" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
+      <!-- red candle -->
+      <rect x="62" y="30" width="18" height="34" rx="3" fill="#dc2626"/>
+      <line x1="71" y1="18"  x2="71" y2="30" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
+      <line x1="71" y1="64"  x2="71" y2="78" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
+      <!-- V connector -->
+      <path d="M28 62 L45 86 L62 62"
+            fill="none" stroke="#0f172a" stroke-width="4"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      <!-- green dot at V tip -->
+      <circle cx="45" cy="86" r="5" fill="#16a34a"/>
+    </svg>
+
+    <!-- Text block -->
+    <div>
+      <div class="vp-wordmark">
+        <span class="vedhi">Vedhi</span><span class="pulse">Pulse</span>
+      </div>
+      <div class="vp-tagline">Nifty 50 Intelligence &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Live Market Data</div>
+      <div class="vp-live">
+        <span class="vp-live-dot"></span> LIVE
+      </div>
     </div>
   </div>
-  <div style="text-align:right;font-size:0.75rem;color:#94a3b8;line-height:1.7">
+
+  <!-- Right: time + connection -->
+  <div style="text-align:right;font-size:0.75rem;color:#94a3b8;line-height:1.8">
     <div style="font-weight:500;color:#64748b">{now_ist}</div>
     <div>{conn_status}</div>
   </div>
+
 </div>
 <hr class="vp-divider">
 """, unsafe_allow_html=True)
