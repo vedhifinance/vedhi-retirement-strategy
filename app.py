@@ -579,72 +579,81 @@ with tab_port:
                   }))
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
-        # ── Sell section ───────────────────────────────────────────────────────
+        # ── Close Trade ────────────────────────────────────────────────────────
         st.divider()
-        st.markdown('<p class="section-header">Sell Position</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">Close a Trade</p>', unsafe_allow_html=True)
 
         symbols_held = [h["symbol"] for h in portfolio]
-        sel_symbol   = st.selectbox("Select holding to sell", symbols_held, key="sel_sym")
+        sel_symbol   = st.selectbox("Select stock to sell", symbols_held, key="sel_sym")
         sel_holding  = next((h for h in portfolio if h["symbol"] == sel_symbol), None)
 
         if sel_holding:
-            cur_ltp = sel_holding.get("ltp", sel_holding["avg_price"])
+            st.caption(
+                f"Holding: {sel_holding['qty']} shares · "
+                f"Avg buy ₹{sel_holding['avg_price']:.2f} · "
+                f"Bought {sel_holding['buy_date']}"
+            )
 
-            sell_col1, sell_col2, sell_col3 = st.columns(3)
-            with sell_col1:
-                sell_qty = st.number_input(
-                    "Sell Quantity",
-                    min_value=1, max_value=sel_holding["qty"],
-                    value=sel_holding["qty"], step=1, key="sell_qty")
-            with sell_col2:
-                sell_price = st.number_input(
-                    "Sell Price ₹",
-                    min_value=0.01,
-                    value=round(float(cur_ltp), 2),
+            # ── Inputs: all in one row ─────────────────────────────────────────
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                sell_qty = st.number_input("Sell Qty", min_value=1,
+                    max_value=sel_holding["qty"], value=sel_holding["qty"],
+                    step=1, key="sell_qty")
+            with c2:
+                sell_price = st.number_input("Sell Price ₹", min_value=0.01,
+                    value=round(float(sel_holding.get("ltp", sel_holding["avg_price"])), 2),
                     step=0.05, format="%.2f", key="sell_price")
-            with sell_col3:
+            with c3:
                 sell_date = st.date_input("Sell Date", value=date.today(), key="sell_date")
+            with c4:
+                manual_brok = st.number_input("Brokerage ₹ (total charges)",
+                    min_value=0.0, value=0.0, step=1.0, format="%.2f", key="manual_brok",
+                    help="Enter total brokerage + STT + all charges. Leave 0 to auto-calculate.")
 
-            # P&L breakdown
-            gross_pnl    = round((sell_price - sel_holding["avg_price"]) * sell_qty, 2)
-            total_brok, brok_only, stt_only = calc_brokerage(
+            # ── Auto brokerage if not entered manually ─────────────────────────
+            auto_brok, brok_only, stt_only = calc_brokerage(
                 sel_holding["avg_price"], sell_price, sell_qty)
-            net_pnl      = round(gross_pnl - total_brok, 2)
+            total_brok   = round(float(manual_brok), 2) if manual_brok > 0 else auto_brok
+            brok_label   = "manual" if manual_brok > 0 else "auto"
+
+            # ── Calculations ───────────────────────────────────────────────────
             invested_sel = round(sel_holding["avg_price"] * sell_qty, 2)
+            sell_val     = round(sell_price * sell_qty, 2)
+            gross_pnl    = round(sell_val - invested_sel, 2)
+            net_pnl      = round(gross_pnl - total_brok, 2)
             net_pnl_pct  = round((net_pnl / invested_sel * 100) if invested_sel else 0, 2)
             hold_days    = (sell_date - date.fromisoformat(sel_holding["buy_date"])).days
+            pnl_col      = "#00c896" if net_pnl >= 0 else "#ff4b6e"
+            pnl_sign     = "+" if net_pnl >= 0 else ""
 
-            st.markdown("**📊 P&L Breakdown**")
+            # ── Result summary card ────────────────────────────────────────────
+            st.markdown(
+                f'''<div style="background:#1a1d27;border:1px solid #2a2d3e;border-radius:10px;
+                            padding:1rem 1.3rem;margin:0.6rem 0 0.8rem 0;font-family:sans-serif">
+  <div style="display:grid;grid-template-columns:auto 1fr;
+              row-gap:0.35rem;column-gap:1.5rem;align-items:center">
+    <span style="font-size:0.8rem;color:#6b7280">Buy Value</span>
+    <span style="font-size:0.88rem;color:#e2e8f0;text-align:right">&#8377;{invested_sel:,.2f}</span>
+    <span style="font-size:0.8rem;color:#6b7280">Sell Value</span>
+    <span style="font-size:0.88rem;color:#e2e8f0;text-align:right">&#8377;{sell_val:,.2f}</span>
+    <span style="font-size:0.8rem;color:#6b7280">Gross P&amp;L</span>
+    <span style="font-size:0.88rem;font-weight:600;color:{pnl_col};text-align:right">&#8377;{gross_pnl:,.2f}</span>
+    <span style="font-size:0.8rem;color:#6b7280">Charges ({brok_label})</span>
+    <span style="font-size:0.88rem;color:#9ca3af;text-align:right">&#8377;{total_brok:.2f}</span>
+    <span style="font-size:0.8rem;color:#6b7280">Held</span>
+    <span style="font-size:0.88rem;color:#9ca3af;text-align:right">{hold_days} days</span>
+    <div style="border-top:1px solid #374151;padding-top:0.4rem;
+                font-size:0.9rem;font-weight:700;color:#e2e8f0">Net P&amp;L</div>
+    <div style="border-top:1px solid #374151;padding-top:0.4rem;
+                font-size:1.05rem;font-weight:700;color:{pnl_col};text-align:right">
+      {pnl_sign}&#8377;{net_pnl:,.2f} &nbsp;({pnl_sign}{net_pnl_pct:.2f}%)</div>
+  </div>
+</div>''',
+                unsafe_allow_html=True
+            )
 
-            # Use a compact table instead of metrics to avoid truncation
-            breakdown_data = {
-                "Item": ["Invested", "Sell Value", "Gross P&L", "Brokerage", "STT", "Other", "Net P&L", "Held"],
-                "Amount ₹": [
-                    f"{invested_sel:,.2f}",
-                    f"{sell_price * sell_qty:,.2f}",
-                    f"{gross_pnl:,.2f}",
-                    f"{brok_only:.2f}",
-                    f"{stt_only:.2f}",
-                    f"{total_brok - brok_only - stt_only:.2f}",
-                    f"{net_pnl:,.2f}  ({net_pnl_pct:.2f}%)",
-                    f"{hold_days} days",
-                ],
-            }
-            df_breakdown = pd.DataFrame(breakdown_data)
-
-            def highlight_pnl_row(row):
-                if row["Item"] == "Net P&L":
-                    color = "#00c896" if net_pnl >= 0 else "#ff4b6e"
-                    return [f"font-weight:700; color:{color}", f"font-weight:700; color:{color}"]
-                if row["Item"] == "Gross P&L":
-                    color = "#00c896" if gross_pnl >= 0 else "#ff4b6e"
-                    return ["", f"color:{color}; font-weight:600"]
-                return ["", ""]
-
-            styled_bd = df_breakdown.style.apply(highlight_pnl_row, axis=1)
-            st.dataframe(styled_bd, use_container_width=True, hide_index=True, height=320)
-
-            if st.button("✅ Confirm Sell & Record to History",
+            if st.button("✅ Confirm & Save to History",
                          use_container_width=True, type="primary", key="confirm_sell"):
                 trade_record = {
                     "symbol":       sel_symbol,
@@ -664,7 +673,6 @@ with tab_port:
                 }
                 history.append(trade_record)
                 save_history(history)
-
                 if int(sell_qty) >= sel_holding["qty"]:
                     portfolio = [h for h in portfolio if h["symbol"] != sel_symbol]
                 else:
@@ -672,10 +680,11 @@ with tab_port:
                         if h["symbol"] == sel_symbol:
                             h["qty"] -= int(sell_qty)
                 save_portfolio(portfolio)
-
                 emoji = "🟢" if net_pnl >= 0 else "🔴"
-                st.success(f"{emoji} Sold {sell_qty} × {sel_symbol} @ ₹{sell_price:.2f} "
-                           f"| Net P&L: ₹{net_pnl:,.2f} ({net_pnl_pct:.2f}%)")
+                st.success(
+                    f"{emoji} {sel_symbol} — {sell_qty} shares @ ₹{sell_price:.2f} · "
+                    f"Net P&L ₹{net_pnl:,.2f} ({pnl_sign}{net_pnl_pct:.2f}%) · {hold_days}d held"
+                )
                 st.rerun()
 
         # ── Remove holding ─────────────────────────────────────────────────────
