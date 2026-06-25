@@ -41,27 +41,7 @@ st.markdown("""
         font-weight: 500;
     }
     .stDataFrame { border-radius: 10px; overflow: hidden; }
-    /* Compact metrics for P&L breakdown */
-    [data-testid="stMetric"] {
-        background: #1a1d27;
-        border: 1px solid #2a2d3e;
-        border-radius: 8px;
-        padding: 0.4rem 0.6rem !important;
-    }
-    [data-testid="stMetricLabel"] p {
-        font-size: 0.65rem !important;
-        color: #6b7280 !important;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 0.85rem !important;
-        font-weight: 600 !important;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    [data-testid="stMetricDelta"] {
-        font-size: 0.75rem !important;
-    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -387,10 +367,28 @@ with tab_scan:
             buy_setups = sum(1 for r in results if r["_all_pass"])
             partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Stocks Scanned",   len(results))
-            m2.metric("✅ Buy Setups",    buy_setups)
-            m3.metric("⚠️ Partial Match", partial)
+            st.markdown(f"""
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
+  <div style="flex:1;min-width:120px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.8rem 1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">Stocks Scanned</div>
+    <div style="font-size:1.4rem;font-weight:700;color:#e2e8f0">{len(results)}</div>
+  </div>
+  <div style="flex:1;min-width:120px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.8rem 1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">✅ Buy Setups</div>
+    <div style="font-size:1.4rem;font-weight:700;color:#00c896">{buy_setups}</div>
+  </div>
+  <div style="flex:1;min-width:120px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.8rem 1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">⚠️ Partial Match</div>
+    <div style="font-size:1.4rem;font-weight:700;color:#f59e0b">{partial}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
             st.divider()
 
             df_scan = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
@@ -435,12 +433,37 @@ with tab_port:
         total_pnl      = total_current - total_invested
         total_pnl_pct  = (total_pnl / total_invested * 100) if total_invested else 0
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Invested",  f"₹{total_invested:,.2f}")
-        m2.metric("Current Value",   f"₹{total_current:,.2f}")
-        m3.metric("Unrealised P&L",  f"₹{total_pnl:,.2f}",
-                  delta=f"{total_pnl_pct:.2f}%")
-        m4.metric("Holdings",        len(portfolio))
+        pnl_col  = "#00c896" if total_pnl >= 0 else "#ff4b6e"
+        pnl_sign = "▲" if total_pnl >= 0 else "▼"
+        st.markdown(f"""
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
+  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.9rem 1.1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">Total Invested</div>
+    <div style="font-size:1.25rem;font-weight:700;color:#e2e8f0">₹{total_invested:,.2f}</div>
+  </div>
+  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.9rem 1.1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">Current Value</div>
+    <div style="font-size:1.25rem;font-weight:700;color:#e2e8f0">₹{total_current:,.2f}</div>
+  </div>
+  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.9rem 1.1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">Unrealised P&amp;L</div>
+    <div style="font-size:1.25rem;font-weight:700;color:{pnl_col}">₹{total_pnl:,.2f}</div>
+    <div style="font-size:0.8rem;color:{pnl_col};margin-top:2px">{pnl_sign} {abs(total_pnl_pct):.2f}%</div>
+  </div>
+  <div style="flex:1;min-width:140px;background:#1a1d27;border:1px solid #2a2d3e;
+              border-radius:10px;padding:0.9rem 1.1rem">
+    <div style="font-size:0.7rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;
+                letter-spacing:0.06em">Holdings</div>
+    <div style="font-size:1.25rem;font-weight:700;color:#e2e8f0">{len(portfolio)}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
         st.divider()
 
     # ── Add new position ───────────────────────────────────────────────────────
@@ -538,7 +561,10 @@ with tab_port:
         df_port = pd.DataFrame(rows)
 
         def colour_pnl(val):
-            color = "#00c896" if float(val) >= 0 else "#ff4b6e"
+            try:
+                color = "#00c896" if float(val) >= 0 else "#ff4b6e"
+            except (TypeError, ValueError):
+                color = "#e2e8f0"
             return f"color: {color}; font-weight: 600"
 
         styled = (df_port.style
