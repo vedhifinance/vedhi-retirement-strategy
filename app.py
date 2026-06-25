@@ -488,104 +488,130 @@ with tab_port:
             color = "#00c896" if val >= 0 else "#ff4b6e"
             return f"color: {color}; font-weight: 600"
 
-        styled = df_port.style.applymap(colour_pnl, subset=["P&L ₹","P&L %"])
+        styled = df_port.style.map(colour_pnl, subset=["P&L ₹","P&L %"])
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
-        # ── Update LTP ─────────────────────────────────────────────────────────
+        # ── Update LTP + Sell ──────────────────────────────────────────────────
         st.divider()
         st.markdown('<p class="section-header">Update LTP / Sell Position</p>',
                     unsafe_allow_html=True)
 
         symbols_held = [h["symbol"] for h in portfolio]
-        sel_symbol   = st.selectbox("Select holding to update or sell", symbols_held)
+        sel_symbol   = st.selectbox("Select holding", symbols_held, key="sel_sym")
         sel_holding  = next((h for h in portfolio if h["symbol"] == sel_symbol), None)
 
         if sel_holding:
-            col_a, col_b = st.columns(2)
-            with col_a:
+
+            # ── Row 1: Update LTP ──────────────────────────────────────────────
+            st.markdown("**① Update current price (LTP)**")
+            ltp_col1, ltp_col2 = st.columns([2, 1])
+            with ltp_col1:
                 new_ltp = st.number_input(
-                    f"Update LTP for {sel_symbol} ₹",
+                    f"LTP for {sel_symbol} ₹",
                     min_value=0.01,
                     value=float(sel_holding.get("ltp", sel_holding["avg_price"])),
-                    step=0.05, format="%.2f"
+                    step=0.05, format="%.2f",
+                    key="ltp_input"
                 )
+            with ltp_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🔄 Update LTP", use_container_width=True):
                     for h in portfolio:
                         if h["symbol"] == sel_symbol:
                             h["ltp"] = round(float(new_ltp), 2)
                     save_portfolio(portfolio)
-                    st.success(f"LTP updated for {sel_symbol} → ₹{new_ltp:.2f}")
+                    st.success(f"✅ LTP updated → ₹{new_ltp:.2f}")
                     st.rerun()
 
-            with col_b:
-                st.markdown("**Sell this position**")
-                sell_qty   = st.number_input("Sell Qty", min_value=1,
-                                             max_value=sel_holding["qty"],
-                                             value=sel_holding["qty"], step=1)
-                sell_price = st.number_input("Sell Price ₹", min_value=0.01,
-                                             value=float(sel_holding.get("ltp", sel_holding["avg_price"])),
-                                             step=0.05, format="%.2f")
-                sell_date  = st.date_input("Sell Date", value=date.today())
+            st.divider()
 
-                # Live P&L preview
-                gross_pnl    = (sell_price - sel_holding["avg_price"]) * sell_qty
-                total_brok, brok_only, stt_only = calc_brokerage(
-                    sel_holding["avg_price"], sell_price, sell_qty)
-                net_pnl      = gross_pnl - total_brok
-                invested_sel = sel_holding["avg_price"] * sell_qty
-                net_pnl_pct  = (net_pnl / invested_sel * 100) if invested_sel else 0
-                hold_days    = (sell_date - date.fromisoformat(sel_holding["buy_date"])).days
+            # ── Row 2: Sell ────────────────────────────────────────────────────
+            st.markdown("**② Sell this position**")
 
-                st.markdown(f"""
-| Item | Amount |
-|---|---|
-| Gross P&L | ₹{gross_pnl:,.2f} |
-| Brokerage | ₹{brok_only:.2f} |
-| STT | ₹{stt_only:.2f} |
-| Other charges | ₹{total_brok - brok_only - stt_only:.2f} |
-| **Net P&L** | **₹{net_pnl:,.2f} ({net_pnl_pct:.2f}%)** |
-| Holding days | {hold_days} days |
-""")
+            sell_col1, sell_col2, sell_col3 = st.columns(3)
+            with sell_col1:
+                sell_qty = st.number_input(
+                    "Sell Quantity",
+                    min_value=1,
+                    max_value=sel_holding["qty"],
+                    value=sel_holding["qty"],
+                    step=1,
+                    key="sell_qty"
+                )
+            with sell_col2:
+                sell_price = st.number_input(
+                    "Sell Price ₹",
+                    min_value=0.01,
+                    value=float(sel_holding.get("ltp", sel_holding["avg_price"])),
+                    step=0.05, format="%.2f",
+                    key="sell_price"
+                )
+            with sell_col3:
+                sell_date = st.date_input("Sell Date", value=date.today(), key="sell_date")
 
-                if st.button("✅ Confirm Sell", use_container_width=True, type="primary"):
-                    # Record in history
-                    trade_record = {
-                        "symbol":       sel_symbol,
-                        "buy_date":     sel_holding["buy_date"],
-                        "sell_date":    str(sell_date),
-                        "holding_days": hold_days,
-                        "qty":          int(sell_qty),
-                        "buy_price":    sel_holding["avg_price"],
-                        "sell_price":   round(float(sell_price), 2),
-                        "invested":     round(invested_sel, 2),
-                        "gross_pnl":    round(gross_pnl, 2),
-                        "brokerage":    round(total_brok, 2),
-                        "net_pnl":      round(net_pnl, 2),
-                        "net_pnl_pct":  round(net_pnl_pct, 2),
-                        "notes":        sel_holding.get("notes",""),
-                        "recorded_on":  str(date.today()),
-                    }
-                    history.append(trade_record)
-                    save_history(history)
+            # Live P&L breakdown — always visible
+            gross_pnl    = (sell_price - sel_holding["avg_price"]) * sell_qty
+            total_brok, brok_only, stt_only = calc_brokerage(
+                sel_holding["avg_price"], sell_price, sell_qty)
+            net_pnl      = gross_pnl - total_brok
+            invested_sel = sel_holding["avg_price"] * sell_qty
+            net_pnl_pct  = (net_pnl / invested_sel * 100) if invested_sel else 0
+            hold_days    = (sell_date - date.fromisoformat(sel_holding["buy_date"])).days
+            pnl_color    = "#00c896" if net_pnl >= 0 else "#ff4b6e"
 
-                    # Update or remove from portfolio
-                    if int(sell_qty) >= sel_holding["qty"]:
-                        portfolio = [h for h in portfolio if h["symbol"] != sel_symbol]
-                    else:
-                        for h in portfolio:
-                            if h["symbol"] == sel_symbol:
-                                h["qty"] -= int(sell_qty)
-                    save_portfolio(portfolio)
+            st.markdown(f"""
+<div style="background:#1a1d27;border:1px solid #2a2d3e;border-radius:10px;padding:1rem 1.5rem;margin:0.75rem 0">
+  <div style="display:flex;gap:2rem;flex-wrap:wrap">
+    <div><span style="color:#6b7280;font-size:0.78rem">INVESTED</span><br><span style="font-size:1.1rem;font-weight:600">₹{invested_sel:,.2f}</span></div>
+    <div><span style="color:#6b7280;font-size:0.78rem">GROSS P&L</span><br><span style="font-size:1.1rem;font-weight:600;color:{pnl_color}">₹{gross_pnl:,.2f}</span></div>
+    <div><span style="color:#6b7280;font-size:0.78rem">BROKERAGE</span><br><span style="font-size:1.1rem;font-weight:600">₹{brok_only:.2f}</span></div>
+    <div><span style="color:#6b7280;font-size:0.78rem">STT</span><br><span style="font-size:1.1rem;font-weight:600">₹{stt_only:.2f}</span></div>
+    <div><span style="color:#6b7280;font-size:0.78rem">OTHER</span><br><span style="font-size:1.1rem;font-weight:600">₹{total_brok - brok_only - stt_only:.2f}</span></div>
+    <div><span style="color:#6b7280;font-size:0.78rem">NET P&L</span><br><span style="font-size:1.3rem;font-weight:700;color:{pnl_color}">₹{net_pnl:,.2f} &nbsp;({net_pnl_pct:.2f}%)</span></div>
+    <div><span style="color:#6b7280;font-size:0.78rem">HELD</span><br><span style="font-size:1.1rem;font-weight:600">{hold_days} days</span></div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-                    pnl_emoji = "🟢" if net_pnl >= 0 else "🔴"
-                    st.success(f"{pnl_emoji} Sold {sell_qty} × {sel_symbol} @ ₹{sell_price:.2f} "
-                               f"| Net P&L: ₹{net_pnl:,.2f} ({net_pnl_pct:.2f}%)")
-                    st.rerun()
+            if st.button("✅ Confirm Sell & Record to History",
+                         use_container_width=True, type="primary", key="confirm_sell"):
+                trade_record = {
+                    "symbol":       sel_symbol,
+                    "buy_date":     sel_holding["buy_date"],
+                    "sell_date":    str(sell_date),
+                    "holding_days": hold_days,
+                    "qty":          int(sell_qty),
+                    "buy_price":    sel_holding["avg_price"],
+                    "sell_price":   round(float(sell_price), 2),
+                    "invested":     round(invested_sel, 2),
+                    "gross_pnl":    round(gross_pnl, 2),
+                    "brokerage":    round(total_brok, 2),
+                    "net_pnl":      round(net_pnl, 2),
+                    "net_pnl_pct":  round(net_pnl_pct, 2),
+                    "notes":        sel_holding.get("notes",""),
+                    "recorded_on":  str(date.today()),
+                }
+                history.append(trade_record)
+                save_history(history)
+
+                if int(sell_qty) >= sel_holding["qty"]:
+                    portfolio = [h for h in portfolio if h["symbol"] != sel_symbol]
+                else:
+                    for h in portfolio:
+                        if h["symbol"] == sel_symbol:
+                            h["qty"] -= int(sell_qty)
+                save_portfolio(portfolio)
+
+                emoji = "🟢" if net_pnl >= 0 else "🔴"
+                st.success(f"{emoji} Sold {sell_qty} × {sel_symbol} @ ₹{sell_price:.2f} "
+                           f"| Net P&L: ₹{net_pnl:,.2f} ({net_pnl_pct:.2f}%)")
+                st.rerun()
 
         # ── Delete a holding ───────────────────────────────────────────────────
-        with st.expander("🗑️ Remove a holding (no trade record)"):
+        st.divider()
+        with st.expander("🗑️ Remove a holding without recording a sale"):
             del_symbol = st.selectbox("Select to remove", symbols_held, key="del_sym")
-            if st.button("Remove from portfolio", type="secondary"):
+            if st.button("Remove from portfolio", type="secondary", key="del_btn"):
                 portfolio = [h for h in portfolio if h["symbol"] != del_symbol]
                 save_portfolio(portfolio)
                 st.warning(f"Removed {del_symbol} from portfolio.")
@@ -666,7 +692,7 @@ with tab_hist:
             color = "#00c896" if val >= 0 else "#ff4b6e"
             return f"color: {color}; font-weight: 600"
 
-        styled_hist = df_hist.style.applymap(
+        styled_hist = df_hist.style.map(
             colour_hist, subset=["Net P&L ₹","Net P&L %","Gross P&L ₹"])
         st.dataframe(styled_hist, use_container_width=True, hide_index=True)
 
@@ -701,5 +727,5 @@ with tab_hist:
         ).reset_index().sort_values("Month", ascending=False)
 
         monthly.columns = ["Month","Trades","Net P&L ₹","Brokerage ₹"]
-        styled_monthly = monthly.style.applymap(colour_hist, subset=["Net P&L ₹"])
+        styled_monthly = monthly.style.map(colour_hist, subset=["Net P&L ₹"])
         st.dataframe(styled_monthly, use_container_width=True, hide_index=True)
