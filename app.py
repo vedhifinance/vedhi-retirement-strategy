@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import pyotp
@@ -414,53 +415,82 @@ ist     = pytz.timezone("Asia/Kolkata")
 now_ist = datetime.now(ist).strftime("%d %b %Y  ·  %I:%M %p IST")
 conn_status = "🟢 Connected" if st.session_state.logged_in else "⚪ Not connected"
 
-st.markdown(f"""
-<div style="display:flex;justify-content:space-between;align-items:center;
-            flex-wrap:wrap;gap:1rem;padding-bottom:0.4rem">
+components.html(f"""
+<!DOCTYPE html>
+<html>
+<head>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{ font-family: Inter, sans-serif; background: transparent; padding: 0 0 12px 0; }}
+  .header {{ display:flex; justify-content:space-between; align-items:center;
+             flex-wrap:wrap; gap:1rem; padding-bottom:0.5rem; }}
+  .left   {{ display:flex; align-items:center; gap:18px; }}
+  .wordmark {{ font-family: "Playfair Display", Georgia, serif;
+               font-size: 2.2rem; font-weight:700; font-style:italic;
+               line-height:1; margin-bottom:4px; }}
+  .vedhi  {{ color:#0f172a; }}
+  .pulse  {{ color:#16a34a; margin-left:5px; }}
+  .tagline {{ font-size:0.65rem; font-weight:500; color:#94a3b8;
+              letter-spacing:0.18em; text-transform:uppercase; margin-bottom:6px; }}
+  .live-badge {{ display:inline-flex; align-items:center; gap:5px;
+                 background:#f0fdf4; border:1px solid #bbf7d0;
+                 border-radius:999px; padding:3px 10px;
+                 font-size:0.68rem; font-weight:600; color:#15803d;
+                 letter-spacing:0.08em; }}
+  .live-dot {{ width:7px; height:7px; background:#16a34a; border-radius:50%;
+               animation: blink 1.8s ease-in-out infinite; }}
+  @keyframes blink {{
+    0%,100% {{ opacity:1; transform:scale(1); }}
+    50%      {{ opacity:0.35; transform:scale(0.7); }}
+  }}
+  .right {{ text-align:right; font-size:0.72rem; color:#94a3b8; line-height:1.9; }}
+  .right .time {{ font-weight:500; color:#64748b; }}
+  .right .conn {{ color:#16a34a; }}
+  .divider {{ border:none; border-top:1px solid #e2e8f0; margin-top:10px; }}
+</style>
+</head>
+<body>
+<div class="header">
 
-  <!-- Left: logo mark + wordmark + tagline -->
-  <div style="display:flex;align-items:center;gap:16px">
-
-    <!-- Candlestick V logo mark -->
-    <svg width="56" height="64" viewBox="0 0 90 100" xmlns="http://www.w3.org/2000/svg"
-         style="flex-shrink:0">
-      <!-- green candle -->
-      <rect x="10" y="22" width="18" height="40" rx="3" fill="#16a34a"/>
-      <line x1="19" y1="10"  x2="19" y2="22" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
-      <line x1="19" y1="62"  x2="19" y2="76" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
-      <!-- red candle -->
-      <rect x="62" y="30" width="18" height="34" rx="3" fill="#dc2626"/>
-      <line x1="71" y1="18"  x2="71" y2="30" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
-      <line x1="71" y1="64"  x2="71" y2="78" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
-      <!-- V connector -->
-      <path d="M28 62 L45 86 L62 62"
-            fill="none" stroke="#0f172a" stroke-width="4"
+  <div class="left">
+    <!-- Candlestick V SVG logo -->
+    <svg width="60" height="68" viewBox="0 0 90 105" xmlns="http://www.w3.org/2000/svg">
+      <!-- green bull candle -->
+      <rect x="8" y="20" width="18" height="42" rx="3" fill="#16a34a"/>
+      <line x1="17" y1="8"  x2="17" y2="20" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
+      <line x1="17" y1="62" x2="17" y2="76" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
+      <!-- red bear candle -->
+      <rect x="64" y="28" width="18" height="36" rx="3" fill="#dc2626"/>
+      <line x1="73" y1="16" x2="73" y2="28" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
+      <line x1="73" y1="64" x2="73" y2="78" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
+      <!-- V connector in dark -->
+      <path d="M26 62 L45 90 L64 62"
+            fill="none" stroke="#0f172a" stroke-width="4.5"
             stroke-linejoin="round" stroke-linecap="round"/>
       <!-- green dot at V tip -->
-      <circle cx="45" cy="86" r="5" fill="#16a34a"/>
+      <circle cx="45" cy="90" r="5.5" fill="#16a34a"/>
     </svg>
 
-    <!-- Text block -->
     <div>
-      <div class="vp-wordmark">
+      <div class="wordmark">
         <span class="vedhi">Vedhi</span><span class="pulse">Pulse</span>
       </div>
-      <div class="vp-tagline">Nifty 50 Intelligence &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Live Market Data</div>
-      <div class="vp-live">
-        <span class="vp-live-dot"></span> LIVE
-      </div>
+      <div class="tagline">Nifty 50 Intelligence &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Live Market Data</div>
+      <div class="live-badge"><span class="live-dot"></span> LIVE</div>
     </div>
   </div>
 
-  <!-- Right: time + connection -->
-  <div style="text-align:right;font-size:0.75rem;color:#94a3b8;line-height:1.8">
-    <div style="font-weight:500;color:#64748b">{now_ist}</div>
-    <div>{conn_status}</div>
+  <div class="right">
+    <div class="time">{now_ist}</div>
+    <div class="conn">{conn_status}</div>
   </div>
 
 </div>
-<hr class="vp-divider">
-""", unsafe_allow_html=True)
+<hr class="divider">
+</body>
+</html>
+""", height=110, scrolling=False)
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 tab_scan, tab_port, tab_hist = st.tabs([
