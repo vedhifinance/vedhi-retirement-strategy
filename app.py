@@ -1,169 +1,18 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import pyotp
 import pytz
-import json
-import os
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 import time
 
 st.set_page_config(
-    page_title="Vedhi Pulse | Nifty 50 Intelligence",
+    page_title="Vedhi Finance | Stock Scanner",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS ─────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Inter:wght@400;500;600&display=swap');
-
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-    .main { background-color: #ffffff; }
-
-    /* ── Vedhi Pulse wordmark ── */
-    .vp-wordmark {
-        font-family: 'Playfair Display', Georgia, serif;
-        font-size: 2.6rem;
-        font-weight: 700;
-        line-height: 1;
-        margin-bottom: 0.15rem;
-        letter-spacing: -0.5px;
-    }
-    .vp-wordmark .vedhi  { color: #0f172a; font-style: italic; }
-    .vp-wordmark .pulse  { color: #16a34a; font-style: italic; margin-left: 6px; }
-
-    /* ── Tagline ── */
-    .vp-tagline {
-        font-family: 'Inter', sans-serif;
-        font-size: 0.72rem;
-        font-weight: 500;
-        color: #94a3b8;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        margin-bottom: 0.6rem;
-    }
-
-    /* ── LIVE badge ── */
-    .vp-live {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        border-radius: 999px;
-        padding: 3px 10px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: #15803d;
-        letter-spacing: 0.08em;
-    }
-    .vp-live-dot {
-        width: 7px; height: 7px;
-        background: #16a34a;
-        border-radius: 50%;
-        animation: pulse-dot 1.8s ease-in-out infinite;
-    }
-    @keyframes pulse-dot {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50%       { opacity: 0.4; transform: scale(0.75); }
-    }
-
-    /* ── Divider ── */
-    .vp-divider {
-        border: none;
-        border-top: 1px solid #e2e8f0;
-        margin: 0.9rem 0 1.1rem 0;
-    }
-
-    /* ── Section labels ── */
-    .section-header {
-        font-size: 0.7rem;
-        font-weight: 600;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin: 1rem 0 0.4rem 0;
-    }
-
-    /* ── Tabs ── */
-    div[data-testid="stTabs"] button {
-        font-family: 'Inter', sans-serif;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #64748b;
-    }
-    div[data-testid="stTabs"] button[aria-selected="true"] {
-        color: #0f172a;
-        font-weight: 600;
-        border-bottom: 2px solid #16a34a;
-    }
-
-    /* ── Data table ── */
-    .stDataFrame { border-radius: 10px; overflow: hidden; }
-
-    /* ── Metric cards (portfolio summary) ── */
-    .vp-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 0.85rem 1rem;
-    }
-    .vp-card-label {
-        font-size: 0.68rem;
-        font-weight: 600;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.09em;
-        margin-bottom: 4px;
-    }
-    .vp-card-value {
-        font-size: 1.2rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-    .vp-card-delta {
-        font-size: 0.78rem;
-        font-weight: 600;
-        margin-top: 2px;
-    }
-
-    /* Buttons */
-    div[data-testid="stButton"] > button[kind="primary"] {
-        background: #16a34a;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.9rem;
-        letter-spacing: 0.02em;
-    }
-    div[data-testid="stButton"] > button[kind="primary"]:hover {
-        background: #15803d;
-    }
-
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: #f8fafc;
-        border-right: 1px solid #e2e8f0;
-    }
-
-    /* Light background for main area */
-    .block-container { background: #ffffff; }
-</style>
-""", unsafe_allow_html=True)
-
-# ── Constants ──────────────────────────────────────────────────────────────────
-PORTFOLIO_FILE = "vedhi_portfolio.json"
-HISTORY_FILE   = "vedhi_history.json"
-BROKERAGE_RATE = 0.0003   # 0.03% each side (Angel One approx)
-STT_RATE       = 0.001    # 0.1% on sell side
-EXCHANGE_RATE  = 0.0000335
-SEBI_RATE      = 0.000001
-STAMP_RATE     = 0.00015  # on buy side
-
+# ── All Nifty 50 — verified tokens + EQ suffix ────────────────────────────────
 ALL_STOCKS = [
     {"symbol":"ADANIENT",   "token":"25",    "name":"Adani Enterprises"},
     {"symbol":"ADANIPORTS", "token":"15083", "name":"Adani Ports"},
@@ -220,160 +69,8 @@ ALL_STOCKS = [
 MY5 = ["SBIN","BEL","ICICIBANK","RELIANCE","LT"]
 MY5_STOCKS = [s for s in ALL_STOCKS if s["symbol"] in MY5]
 
-# ── Session state ──────────────────────────────────────────────────────────────
 if "smart_api" not in st.session_state: st.session_state.smart_api = None
 if "logged_in"  not in st.session_state: st.session_state.logged_in  = False
-
-# ── Portfolio persistence helpers ──────────────────────────────────────────────
-def load_portfolio():
-    if os.path.exists(PORTFOLIO_FILE):
-        with open(PORTFOLIO_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-def save_portfolio(data):
-    with open(PORTFOLIO_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-def save_history(data):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-# ── Brokerage calculator ───────────────────────────────────────────────────────
-def calc_brokerage(buy_price, sell_price, qty):
-    buy_val  = buy_price  * qty
-    sell_val = sell_price * qty
-    brok_buy  = min(buy_val  * BROKERAGE_RATE, 20)   # Angel One max ₹20/order
-    brok_sell = min(sell_val * BROKERAGE_RATE, 20)
-    stt       = sell_val * STT_RATE
-    exchange  = (buy_val + sell_val) * EXCHANGE_RATE
-    sebi      = (buy_val + sell_val) * SEBI_RATE
-    stamp     = buy_val * STAMP_RATE
-    total     = brok_buy + brok_sell + stt + exchange + sebi + stamp
-    return round(total, 2), round(brok_buy + brok_sell, 2), round(stt, 2)
-
-# ── Live LTP fetch via Angel One ──────────────────────────────────────────────
-def fetch_live_ltp(obj, symbols_list):
-    """Fetch live LTP for a list of symbols from Angel One market quote API.
-    Returns dict {symbol: ltp}"""
-    ltp_map = {}
-    if not obj:
-        return ltp_map
-    # Build token map for lookup
-    token_map = {s["symbol"]: s["token"] for s in ALL_STOCKS}
-    for sym in symbols_list:
-        try:
-            token = token_map.get(sym)
-            if not token:
-                continue
-            resp = obj.ltpData("NSE", sym + "-EQ", token)
-            if resp and resp.get("status") and resp.get("data"):
-                ltp_map[sym] = round(float(resp["data"]["ltp"]), 2)
-            time.sleep(0.15)  # gentle rate limit
-        except Exception:
-            pass
-    return ltp_map
-
-# ── Indicators ────────────────────────────────────────────────────────────────
-def calc_rsi(s, p=14):
-    d = s.diff()
-    g = d.clip(lower=0).ewm(com=p-1, min_periods=p).mean()
-    l = (-d.clip(upper=0)).ewm(com=p-1, min_periods=p).mean()
-    return 100 - 100/(1 + g/l)
-
-def calc_ema(s, p):
-    return s.ewm(span=p, adjust=False).mean()
-
-def analyse(obj, stock):
-    try:
-        ist   = pytz.timezone("Asia/Kolkata")
-        to_dt = datetime.now(ist).strftime("%Y-%m-%d %H:%M")
-        fr_dt = (datetime.now(ist) - timedelta(days=300)).strftime("%Y-%m-%d %H:%M")
-
-        resp = obj.getCandleData({
-            "exchange":    "NSE",
-            "symboltoken": stock["token"],
-            "interval":    "ONE_DAY",
-            "fromdate":    fr_dt,
-            "todate":      to_dt,
-        })
-
-        if not resp or not resp.get("status") or not resp.get("data"):
-            return None
-        if len(resp["data"]) < 60:
-            return None
-
-        df      = pd.DataFrame(resp["data"], columns=["ts","o","h","l","c","v"])
-        df["c"] = pd.to_numeric(df["c"])
-        df["v"] = pd.to_numeric(df["v"])
-        df["o"] = pd.to_numeric(df["o"])
-        close   = df["c"]
-        volume  = df["v"]
-
-        r14  = calc_rsi(close, 14)
-        e20  = calc_ema(close, 20)
-        e50  = calc_ema(close, 50)
-        e200 = calc_ema(close, 200) if len(close) >= 200 else calc_ema(close, len(close))
-        vavg = volume.rolling(20).mean()
-
-        price     = float(close.iloc[-1])
-        prev      = float(close.iloc[-2])
-        chg_pct   = (price - prev) / prev * 100
-        r_rsi     = float(r14.iloc[-1])
-        r_e20     = float(e20.iloc[-1])
-        r_e50     = float(e50.iloc[-1])
-        r_e200    = float(e200.iloc[-1])
-        vol_ratio = float(volume.iloc[-1]) / float(vavg.iloc[-1]) \
-                    if float(vavg.iloc[-1]) > 0 else 0
-        pct_200   = (price - r_e200) / r_e200 * 100
-        last_open = float(df["o"].iloc[-1])
-        candle    = "🟢 Green" if price >= last_open else "🔴 Red"
-
-        f1 = 35 <= r_rsi <= 45
-        f2 = price > r_e50
-        f3 = r_e20 > r_e50
-        f4 = vol_ratio >= 1.2
-        f5 = price >= last_open
-        passed = sum([f1, f2, f3, f4])
-
-        if passed == 4 and f5:
-            signal = "✅ BUY SETUP"
-        elif passed == 4:
-            signal = "⚠️ Watch (red candle)"
-        elif passed >= 3 and f1:
-            signal = "— Monitor"
-        elif not f1 and r_rsi > 60:
-            signal = "⏳ Wait — RSI overbought"
-        elif not f1 and r_rsi < 35:
-            signal = "⚠️ RSI too low — wait"
-        elif not f2 or not f3:
-            signal = "❌ Avoid — trend weak"
-        else:
-            signal = "— Monitor"
-
-        return {
-            "Stock":     stock["symbol"],
-            "LTP ₹":     round(price, 2),
-            "Chg %":     round(chg_pct, 2),
-            "RSI":       round(r_rsi, 1),
-            "EMA 20":    round(r_e20, 2),
-            "EMA 50":    round(r_e50, 2),
-            "EMA 200":   round(r_e200, 2),
-            "% vs 200":  round(pct_200, 1),
-            "Vol Ratio": round(vol_ratio, 2),
-            "Candle":    candle,
-            "Signal":    signal,
-            "_passed":   passed,
-            "_all_pass": passed == 4 and f5,
-        }
-    except Exception:
-        return None
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -410,567 +107,383 @@ with st.sidebar:
             st.session_state.logged_in = False
             st.rerun()
 
-# ── Header ─────────────────────────────────────────────────────────────────────
-ist     = pytz.timezone("Asia/Kolkata")
-now_ist = datetime.now(ist).strftime("%d %b %Y  ·  %I:%M %p IST")
-conn_status = "🟢 Connected" if st.session_state.logged_in else "⚪ Not connected"
+# ── Indicators ────────────────────────────────────────────────────────────────
+def calc_rsi(s, p=14):
+    d = s.diff()
+    g = d.clip(lower=0).ewm(com=p-1, min_periods=p).mean()
+    l = (-d.clip(upper=0)).ewm(com=p-1, min_periods=p).mean()
+    return 100 - 100/(1 + g/l)
 
-components.html(f"""
-<!DOCTYPE html>
-<html>
-<head>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  * {{ margin:0; padding:0; box-sizing:border-box; }}
-  body {{ font-family: Inter, sans-serif; background: transparent; padding: 0 0 12px 0; }}
-  .header {{ display:flex; justify-content:space-between; align-items:center;
-             flex-wrap:wrap; gap:1rem; padding-bottom:0.5rem; }}
-  .left   {{ display:flex; align-items:center; gap:18px; }}
-  .wordmark {{ font-family: "Playfair Display", Georgia, serif;
-               font-size: 2.2rem; font-weight:700; font-style:italic;
-               line-height:1; margin-bottom:4px; }}
-  .vedhi  {{ color:#0f172a; }}
-  .pulse  {{ color:#16a34a; margin-left:5px; }}
-  .tagline {{ font-size:0.65rem; font-weight:500; color:#94a3b8;
-              letter-spacing:0.18em; text-transform:uppercase; margin-bottom:6px; }}
-  .live-badge {{ display:inline-flex; align-items:center; gap:5px;
-                 background:#f0fdf4; border:1px solid #bbf7d0;
-                 border-radius:999px; padding:3px 10px;
-                 font-size:0.68rem; font-weight:600; color:#15803d;
-                 letter-spacing:0.08em; }}
-  .live-dot {{ width:7px; height:7px; background:#16a34a; border-radius:50%;
-               animation: blink 1.8s ease-in-out infinite; }}
-  @keyframes blink {{
-    0%,100% {{ opacity:1; transform:scale(1); }}
-    50%      {{ opacity:0.35; transform:scale(0.7); }}
-  }}
-  .right {{ text-align:right; font-size:0.72rem; color:#94a3b8; line-height:1.9; }}
-  .right .time {{ font-weight:500; color:#64748b; }}
-  .right .conn {{ color:#16a34a; }}
-  .divider {{ border:none; border-top:1px solid #e2e8f0; margin-top:10px; }}
-</style>
-</head>
-<body>
-<div class="header">
+def calc_ema(s, p):
+    return s.ewm(span=p, adjust=False).mean()
 
-  <div class="left">
-    <!-- Candlestick V SVG logo -->
-    <svg width="60" height="68" viewBox="0 0 90 105" xmlns="http://www.w3.org/2000/svg">
-      <!-- green bull candle -->
-      <rect x="8" y="20" width="18" height="42" rx="3" fill="#16a34a"/>
-      <line x1="17" y1="8"  x2="17" y2="20" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
-      <line x1="17" y1="62" x2="17" y2="76" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/>
-      <!-- red bear candle -->
-      <rect x="64" y="28" width="18" height="36" rx="3" fill="#dc2626"/>
-      <line x1="73" y1="16" x2="73" y2="28" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
-      <line x1="73" y1="64" x2="73" y2="78" stroke="#dc2626" stroke-width="3" stroke-linecap="round"/>
-      <!-- V connector in dark -->
-      <path d="M26 62 L45 90 L64 62"
-            fill="none" stroke="#0f172a" stroke-width="4.5"
-            stroke-linejoin="round" stroke-linecap="round"/>
-      <!-- green dot at V tip -->
-      <circle cx="45" cy="90" r="5.5" fill="#16a34a"/>
-    </svg>
+def analyse(obj, stock):
+    try:
+        ist      = pytz.timezone("Asia/Kolkata")
+        to_dt    = datetime.now(ist).strftime("%Y-%m-%d %H:%M")
+        fr_dt    = (datetime.now(ist) - timedelta(days=300)).strftime("%Y-%m-%d %H:%M")
 
-    <div>
-      <div class="wordmark">
-        <span class="vedhi">Vedhi</span><span class="pulse">Pulse</span>
-      </div>
-      <div class="tagline">Nifty 50 Intelligence &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Live Market Data</div>
-      <div class="live-badge"><span class="live-dot"></span> LIVE</div>
-    </div>
-  </div>
+        # Angel One requires SYMBOL-EQ format for tradingsymbol in candle API
+        trading_symbol = stock["symbol"] + "-EQ"
 
-  <div class="right">
-    <div class="time">{now_ist}</div>
-    <div class="conn">{conn_status}</div>
-  </div>
-
-</div>
-<hr class="divider">
-</body>
-</html>
-""", height=110, scrolling=False)
-
-# ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_scan, tab_port, tab_hist = st.tabs([
-    "🔍 Stock Scanner",
-    "📊 Portfolio Tracker",
-    "📜 Trade History"
-])
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — SCANNER (unchanged logic)
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_scan:
-    st.markdown('<p class="section-header">Scanner Controls</p>', unsafe_allow_html=True)
-
-    if not st.session_state.logged_in:
-        st.info("👈 Connect Angel One from the sidebar to run the scanner.")
-    else:
-        c1, c2 = st.columns([2, 3])
-        with c1:
-            run_scan = st.button("🔍 Run Scanner", use_container_width=True)
-        with c2:
-            mode = st.radio("Mode", ["My 5 Stocks", "All Nifty 50"], horizontal=True)
-
-        st.caption("Strategy: RSI 35–45 · Price > EMA50 · EMA20 > EMA50 · Volume > 1.2× avg")
-
-        if run_scan:
-            stocks_to_scan = MY5_STOCKS if mode == "My 5 Stocks" else ALL_STOCKS
-            obj     = st.session_state.smart_api
-            results = []
-            errors  = []
-            bar     = st.progress(0)
-
-            for i, stock in enumerate(stocks_to_scan):
-                bar.progress((i+1)/len(stocks_to_scan),
-                             text=f"Fetching {stock['symbol']}...")
-                r = None
-                for attempt in range(3):
-                    r = analyse(obj, stock)
-                    if r:
-                        break
-                    time.sleep(1.0 * (attempt + 1))
-                if r:
-                    results.append(r)
-                else:
-                    errors.append(stock["symbol"])
-                time.sleep(0.5)
-            bar.empty()
-
-            if errors:
-                st.caption(f"⚠️ Could not fetch: {', '.join(errors)}")
-
-            if not results:
-                st.error("No data returned. Session may have expired — reconnect.")
-                st.stop()
-
-            results.sort(key=lambda x: (-x["_all_pass"], -x["_passed"]))
-
-            buy_setups = sum(1 for r in results if r["_all_pass"])
-
-            st.markdown(f"""
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
-  <div class="vp-card" style="flex:1;min-width:120px">
-    <div class="vp-card-label">Stocks Scanned</div>
-    <div class="vp-card-value">{len(results)}</div>
-  </div>
-  <div class="vp-card" style="flex:1;min-width:120px">
-    <div class="vp-card-label">Buy Setups</div>
-    <div class="vp-card-value" style="color:#16a34a">{buy_setups}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-            st.divider()
-
-            df_scan = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
-            st.dataframe(df_scan, use_container_width=True, hide_index=True)
-            st.caption(f"Scanned at {datetime.now(ist).strftime('%d %b %Y, %I:%M %p IST')}")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — PORTFOLIO TRACKER
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_port:
-
-    portfolio = load_portfolio()
-    history   = load_history()
-
-    st.markdown('<p class="section-header">Current Holdings</p>', unsafe_allow_html=True)
-
-    # ── Live LTP refresh button ────────────────────────────────────────────────
-    if portfolio and st.session_state.logged_in:
-        rf_col1, rf_col2 = st.columns([2, 5])
-        with rf_col1:
-            if st.button("🔴 Refresh Live LTP", use_container_width=True):
-                with st.spinner("Fetching live prices from Angel One..."):
-                    syms = [h["symbol"] for h in portfolio]
-                    ltp_map = fetch_live_ltp(st.session_state.smart_api, syms)
-                    updated = 0
-                    for h in portfolio:
-                        if h["symbol"] in ltp_map:
-                            h["ltp"] = ltp_map[h["symbol"]]
-                            updated += 1
-                    save_portfolio(portfolio)
-                    st.success(f"✅ Updated {updated}/{len(syms)} live prices")
-                    st.rerun()
-        with rf_col2:
-            st.caption("Fetches real-time LTP from Angel One for all holdings · click after market opens")
-    elif portfolio and not st.session_state.logged_in:
-        st.caption("🔌 Connect Angel One from sidebar to enable live LTP refresh")
-
-    # ── Summary metrics ────────────────────────────────────────────────────────
-    if portfolio:
-        total_invested = sum(h["qty"] * h["avg_price"] for h in portfolio)
-        total_current  = sum(h["qty"] * h.get("ltp", h["avg_price"]) for h in portfolio)
-        total_pnl      = total_current - total_invested
-        total_pnl_pct  = (total_pnl / total_invested * 100) if total_invested else 0
-
-        pnl_col  = "#16a34a" if total_pnl >= 0 else "#dc2626"
-        pnl_sign = "▲" if total_pnl >= 0 else "▼"
-        st.markdown(f"""
-<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">
-  <div class="vp-card" style="flex:1;min-width:140px">
-    <div class="vp-card-label">Total Invested</div>
-    <div class="vp-card-value">&#8377;{total_invested:,.2f}</div>
-  </div>
-  <div class="vp-card" style="flex:1;min-width:140px">
-    <div class="vp-card-label">Current Value</div>
-    <div class="vp-card-value">&#8377;{total_current:,.2f}</div>
-  </div>
-  <div class="vp-card" style="flex:1;min-width:140px">
-    <div class="vp-card-label">Unrealised P&amp;L</div>
-    <div class="vp-card-value" style="color:{pnl_col}">&#8377;{total_pnl:,.2f}</div>
-    <div class="vp-card-delta" style="color:{pnl_col}">{pnl_sign} {abs(total_pnl_pct):.2f}%</div>
-  </div>
-  <div class="vp-card" style="flex:1;min-width:140px">
-    <div class="vp-card-label">Holdings</div>
-    <div class="vp-card-value">{len(portfolio)}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-        st.divider()
-
-    # ── Add new position ───────────────────────────────────────────────────────
-    with st.expander("➕ Add New Position", expanded=len(portfolio) == 0):
-        all_symbols = sorted([s["symbol"] for s in ALL_STOCKS])
-        col1, col2 = st.columns(2)
-        with col1:
-            symbol_select = st.selectbox("Stock Symbol (Nifty 50)", [""] + all_symbols)
-            symbol_custom = st.text_input("Or type custom symbol", placeholder="e.g. ONGC, NTPC")
-            symbol = (symbol_custom.strip().upper() if symbol_custom.strip() else symbol_select)
-        with col2:
-            buy_date = st.date_input("Buy Date", value=date.today())
-            qty      = st.number_input("Quantity (shares)", min_value=1, value=1, step=1)
-
-        col3, col4 = st.columns(2)
-        with col3:
-            avg_price = st.number_input("Buy Price ₹", min_value=0.01,
-                                        value=100.00, step=0.05, format="%.2f")
-        with col4:
-            ltp_add = st.number_input("LTP ₹ (leave 0 to auto-fill from buy price)",
-                                      min_value=0.0, value=0.0, step=0.05, format="%.2f")
-
-        notes = st.text_input("Notes", placeholder="e.g. SMA 200 bounce entry")
-
-        if avg_price > 0 and qty > 0:
-            buy_val       = avg_price * qty
-            brok_preview  = min(buy_val * BROKERAGE_RATE, 20)
-            stamp_preview = buy_val * STAMP_RATE
-            st.caption(f"Est. buy cost: ₹{brok_preview + stamp_preview:.2f} "
-                       f"(brokerage ₹{brok_preview:.2f} + stamp ₹{stamp_preview:.2f})")
-
-        if st.button("💾 Add to Portfolio", use_container_width=True):
-            if not symbol:
-                st.error("Please select or enter a stock symbol.")
-            else:
-                holding_days = (date.today() - buy_date).days
-                new_pos = {
-                    "symbol":       symbol,
-                    "qty":          int(qty),
-                    "avg_price":    round(float(avg_price), 2),
-                    "buy_date":     str(buy_date),
-                    "holding_days": holding_days,
-                    "ltp":          round(float(ltp_add), 2) if ltp_add > 0 else round(float(avg_price), 2),
-                    "notes":        notes,
-                    "added_on":     str(date.today()),
-                }
-                existing = [p for p in portfolio if p["symbol"] == symbol]
-                if existing:
-                    ex        = existing[0]
-                    total_qty = ex["qty"] + int(qty)
-                    new_avg   = (ex["qty"] * ex["avg_price"] + int(qty) * float(avg_price)) / total_qty
-                    ex["qty"]          = total_qty
-                    ex["avg_price"]    = round(new_avg, 2)
-                    ex["holding_days"] = (date.today() - date.fromisoformat(ex["buy_date"])).days
-                    if ltp_add > 0:
-                        ex["ltp"] = round(float(ltp_add), 2)
-                    if notes:
-                        ex["notes"] = (ex.get("notes","") + " | " + notes).strip(" | ")
-                    st.success(f"✅ Averaged {symbol} — new avg ₹{new_avg:.2f} × {total_qty} shares")
-                else:
-                    portfolio.append(new_pos)
-                    st.success(f"✅ Added {symbol} — {qty} shares @ ₹{avg_price:.2f}")
-                save_portfolio(portfolio)
-                st.rerun()
-
-    # ── Holdings table ─────────────────────────────────────────────────────────
-    if portfolio:
-        st.markdown('<p class="section-header">Holdings Detail</p>', unsafe_allow_html=True)
-
-        rows = []
-        for h in portfolio:
-            qty_h      = h["qty"]
-            avg_h      = h["avg_price"]
-            ltp_h      = h.get("ltp", avg_h)
-            invested   = round(qty_h * avg_h, 2)
-            curr_val   = round(qty_h * ltp_h, 2)
-            unreal_pnl = round(curr_val - invested, 2)
-            unreal_pct = round((unreal_pnl / invested * 100) if invested else 0, 2)
-            hdays      = (date.today() - date.fromisoformat(h["buy_date"])).days
-
-            rows.append({
-                "Symbol":       h["symbol"],
-                "Qty":          qty_h,
-                "Avg ₹":        round(avg_h, 2),
-                "LTP ₹":        round(ltp_h, 2),
-                "Invested ₹":   invested,
-                "Value ₹":      curr_val,
-                "P&L ₹":        unreal_pnl,
-                "P&L %":        unreal_pct,
-                "Days":         hdays,
-                "Buy Date":     h["buy_date"],
-                "Notes":        h.get("notes",""),
-            })
-
-        df_port = pd.DataFrame(rows)
-
-        def colour_pnl(val):
-            try:
-                color = "#00c896" if float(val) >= 0 else "#ff4b6e"
-            except (TypeError, ValueError):
-                color = "#e2e8f0"
-            return f"color: {color}; font-weight: 600"
-
-        styled = (df_port.style
-                  .map(colour_pnl, subset=["P&L ₹", "P&L %"])
-                  .format({
-                      "Avg ₹":      "{:.2f}",
-                      "LTP ₹":      "{:.2f}",
-                      "Invested ₹": "{:,.2f}",
-                      "Value ₹":    "{:,.2f}",
-                      "P&L ₹":      "{:,.2f}",
-                      "P&L %":      "{:.2f}",
-                  }))
-        st.dataframe(styled, use_container_width=True, hide_index=True)
-
-        # ── Close Trade ────────────────────────────────────────────────────────
-        st.divider()
-        st.markdown('<p class="section-header">Close a Trade</p>', unsafe_allow_html=True)
-
-        symbols_held = [h["symbol"] for h in portfolio]
-        sel_symbol   = st.selectbox("Select stock to sell", symbols_held, key="sel_sym")
-        sel_holding  = next((h for h in portfolio if h["symbol"] == sel_symbol), None)
-
-        if sel_holding:
-            st.caption(
-                f"Holding: {sel_holding['qty']} shares · "
-                f"Avg buy ₹{sel_holding['avg_price']:.2f} · "
-                f"Bought {sel_holding['buy_date']}"
-            )
-
-            # ── Inputs: all in one row ─────────────────────────────────────────
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                sell_qty = st.number_input("Sell Qty", min_value=1,
-                    max_value=sel_holding["qty"], value=sel_holding["qty"],
-                    step=1, key="sell_qty")
-            with c2:
-                sell_price = st.number_input("Sell Price ₹", min_value=0.01,
-                    value=round(float(sel_holding.get("ltp", sel_holding["avg_price"])), 2),
-                    step=0.05, format="%.2f", key="sell_price")
-            with c3:
-                sell_date = st.date_input("Sell Date", value=date.today(), key="sell_date")
-            with c4:
-                manual_brok = st.number_input("Brokerage ₹ (total charges)",
-                    min_value=0.0, value=0.0, step=1.0, format="%.2f", key="manual_brok",
-                    help="Enter total brokerage + STT + all charges. Leave 0 to auto-calculate.")
-
-            # ── Auto brokerage if not entered manually ─────────────────────────
-            auto_brok, brok_only, stt_only = calc_brokerage(
-                sel_holding["avg_price"], sell_price, sell_qty)
-            total_brok   = round(float(manual_brok), 2) if manual_brok > 0 else auto_brok
-            brok_label   = "manual" if manual_brok > 0 else "auto"
-
-            # ── Calculations ───────────────────────────────────────────────────
-            invested_sel = round(sel_holding["avg_price"] * sell_qty, 2)
-            sell_val     = round(sell_price * sell_qty, 2)
-            gross_pnl    = round(sell_val - invested_sel, 2)
-            net_pnl      = round(gross_pnl - total_brok, 2)
-            net_pnl_pct  = round((net_pnl / invested_sel * 100) if invested_sel else 0, 2)
-            hold_days    = (sell_date - date.fromisoformat(sel_holding["buy_date"])).days
-            pnl_col      = "#00c896" if net_pnl >= 0 else "#ff4b6e"
-            pnl_sign     = "+" if net_pnl >= 0 else ""
-
-            # ── Result summary card ────────────────────────────────────────────
-            st.markdown(
-                f'''<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;
-                            padding:1rem 1.3rem;margin:0.6rem 0 0.8rem 0;font-family:sans-serif">
-  <div style="display:grid;grid-template-columns:auto 1fr;
-              row-gap:0.35rem;column-gap:1.5rem;align-items:center">
-    <span style="font-size:0.8rem;color:#64748b">Buy Value</span>
-    <span style="font-size:0.88rem;color:#0f172a;text-align:right">&#8377;{invested_sel:,.2f}</span>
-    <span style="font-size:0.8rem;color:#64748b">Sell Value</span>
-    <span style="font-size:0.88rem;color:#0f172a;text-align:right">&#8377;{sell_val:,.2f}</span>
-    <span style="font-size:0.8rem;color:#64748b">Gross P&amp;L</span>
-    <span style="font-size:0.88rem;font-weight:600;color:{pnl_col};text-align:right">&#8377;{gross_pnl:,.2f}</span>
-    <span style="font-size:0.8rem;color:#64748b">Charges ({brok_label})</span>
-    <span style="font-size:0.88rem;color:#64748b;text-align:right">&#8377;{total_brok:.2f}</span>
-    <span style="font-size:0.8rem;color:#64748b">Held</span>
-    <span style="font-size:0.88rem;color:#64748b;text-align:right">{hold_days} days</span>
-    <div style="border-top:1px solid #e2e8f0;padding-top:0.4rem;
-                font-size:0.9rem;font-weight:700;color:#0f172a">Net P&amp;L</div>
-    <div style="border-top:1px solid #e2e8f0;padding-top:0.4rem;
-                font-size:1.05rem;font-weight:700;color:{pnl_col};text-align:right">
-      {pnl_sign}&#8377;{net_pnl:,.2f} &nbsp;({pnl_sign}{net_pnl_pct:.2f}%)</div>
-  </div>
-</div>''',
-                unsafe_allow_html=True
-            )
-
-            if st.button("✅ Confirm & Save to History",
-                         use_container_width=True, type="primary", key="confirm_sell"):
-                trade_record = {
-                    "symbol":       sel_symbol,
-                    "buy_date":     sel_holding["buy_date"],
-                    "sell_date":    str(sell_date),
-                    "holding_days": hold_days,
-                    "qty":          int(sell_qty),
-                    "buy_price":    sel_holding["avg_price"],
-                    "sell_price":   round(float(sell_price), 2),
-                    "invested":     invested_sel,
-                    "gross_pnl":    gross_pnl,
-                    "brokerage":    round(total_brok, 2),
-                    "net_pnl":      net_pnl,
-                    "net_pnl_pct":  net_pnl_pct,
-                    "notes":        sel_holding.get("notes",""),
-                    "recorded_on":  str(date.today()),
-                }
-                history.append(trade_record)
-                save_history(history)
-                if int(sell_qty) >= sel_holding["qty"]:
-                    portfolio = [h for h in portfolio if h["symbol"] != sel_symbol]
-                else:
-                    for h in portfolio:
-                        if h["symbol"] == sel_symbol:
-                            h["qty"] -= int(sell_qty)
-                save_portfolio(portfolio)
-                emoji = "🟢" if net_pnl >= 0 else "🔴"
-                st.success(
-                    f"{emoji} {sel_symbol} — {sell_qty} shares @ ₹{sell_price:.2f} · "
-                    f"Net P&L ₹{net_pnl:,.2f} ({pnl_sign}{net_pnl_pct:.2f}%) · {hold_days}d held"
-                )
-                st.rerun()
-
-        # ── Remove holding ─────────────────────────────────────────────────────
-        st.divider()
-        with st.expander("🗑️ Remove a holding without recording a sale"):
-            del_symbol = st.selectbox("Select to remove", symbols_held, key="del_sym")
-            if st.button("Remove", type="secondary", key="del_btn"):
-                portfolio = [h for h in portfolio if h["symbol"] != del_symbol]
-                save_portfolio(portfolio)
-                st.warning(f"Removed {del_symbol}.")
-                st.rerun()
-
-    else:
-        st.info("No holdings yet. Use **Add New Position** above to get started.")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — TRADE HISTORY
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_hist:
-    history = load_history()
-
-    st.markdown('<p class="section-header">Closed Trade History</p>', unsafe_allow_html=True)
-
-    if not history:
-        st.info("No closed trades yet. Sell a position from the Portfolio Tracker tab to record history.")
-    else:
-        # Summary
-        total_net    = sum(h["net_pnl"] for h in history)
-        total_winners = sum(1 for h in history if h["net_pnl"] >= 0)
-        total_losers  = len(history) - total_winners
-        win_rate      = (total_winners / len(history) * 100) if history else 0
-        total_brok    = sum(h["brokerage"] for h in history)
-        avg_hold      = sum(h["holding_days"] for h in history) / len(history)
-
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        m1.metric("Total Trades",    len(history))
-        m2.metric("Net P&L",         f"₹{total_net:,.0f}")
-        m3.metric("Win Rate",         f"{win_rate:.0f}%")
-        m4.metric("Winners",          total_winners)
-        m5.metric("Losers",           total_losers)
-        m6.metric("Avg Hold Days",    f"{avg_hold:.0f}d")
-
-        st.divider()
-
-        # Best and worst trade
-        if len(history) > 0:
-            best  = max(history, key=lambda x: x["net_pnl"])
-            worst = min(history, key=lambda x: x["net_pnl"])
-            bc, wc = st.columns(2)
-            with bc:
-                st.success(f"🏆 Best trade: **{best['symbol']}** — "
-                           f"₹{best['net_pnl']:,.2f} ({best['net_pnl_pct']:.2f}%) "
-                           f"in {best['holding_days']}d")
-            with wc:
-                st.error(f"📉 Worst trade: **{worst['symbol']}** — "
-                         f"₹{worst['net_pnl']:,.2f} ({worst['net_pnl_pct']:.2f}%) "
-                         f"in {worst['holding_days']}d")
-
-        st.divider()
-
-        # Full history table
-        df_hist = pd.DataFrame(history)
-        df_hist = df_hist[[
-            "symbol","buy_date","sell_date","holding_days",
-            "qty","buy_price","sell_price",
-            "invested","gross_pnl","brokerage","net_pnl","net_pnl_pct","notes"
-        ]].rename(columns={
-            "symbol":       "Symbol",
-            "buy_date":     "Buy Date",
-            "sell_date":    "Sell Date",
-            "holding_days": "Days",
-            "qty":          "Qty",
-            "buy_price":    "Buy ₹",
-            "sell_price":   "Sell ₹",
-            "invested":     "Invested ₹",
-            "gross_pnl":    "Gross P&L ₹",
-            "brokerage":    "Brokerage ₹",
-            "net_pnl":      "Net P&L ₹",
-            "net_pnl_pct":  "Net P&L %",
-            "notes":        "Notes",
+        resp = obj.getCandleData({
+            "exchange":    "NSE",
+            "symboltoken": stock["token"],
+            "interval":    "ONE_DAY",
+            "fromdate":    fr_dt,
+            "todate":      to_dt,
         })
-        df_hist = df_hist.sort_values("Sell Date", ascending=False)
 
-        def colour_hist(val):
-            color = "#00c896" if val >= 0 else "#ff4b6e"
-            return f"color: {color}; font-weight: 600"
+        if not resp or not resp.get("status") or not resp.get("data"):
+            return None
+        if len(resp["data"]) < 60:
+            return None
 
-        styled_hist = df_hist.style.map(
-            colour_hist, subset=["Net P&L ₹","Net P&L %","Gross P&L ₹"])
-        st.dataframe(styled_hist, use_container_width=True, hide_index=True)
+        df       = pd.DataFrame(resp["data"], columns=["ts","o","h","l","c","v"])
+        df["c"]  = pd.to_numeric(df["c"])
+        df["v"]  = pd.to_numeric(df["v"])
+        df["o"]  = pd.to_numeric(df["o"])
+        close    = df["c"]
+        volume   = df["v"]
 
-        # ── Export ─────────────────────────────────────────────────────────────
-        st.divider()
-        col_exp1, col_exp2 = st.columns(2)
-        with col_exp1:
-            csv = df_hist.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "⬇️ Download History as CSV",
-                data=csv,
-                file_name=f"vedhi_trade_history_{date.today()}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        with col_exp2:
-            # Clear all history
-            if st.button("🗑️ Clear All History", type="secondary", use_container_width=True):
-                save_history([])
-                st.warning("History cleared.")
-                st.rerun()
+        r14   = calc_rsi(close, 14)
+        e20   = calc_ema(close, 20)
+        e50   = calc_ema(close, 50)
+        e200  = calc_ema(close, 200) if len(close) >= 200 else calc_ema(close, len(close))
+        vavg  = volume.rolling(20).mean()
 
-        # ── Monthly P&L summary ────────────────────────────────────────────────
-        st.divider()
-        st.markdown('<p class="section-header">Monthly P&L Summary</p>', unsafe_allow_html=True)
+        price     = float(close.iloc[-1])
+        prev      = float(close.iloc[-2])
+        chg_pct   = (price - prev) / prev * 100
+        r_rsi     = float(r14.iloc[-1])
+        r_e20     = float(e20.iloc[-1])
+        r_e50     = float(e50.iloc[-1])
+        r_e200    = float(e200.iloc[-1])
+        vol_ratio = float(volume.iloc[-1]) / float(vavg.iloc[-1]) \
+                    if float(vavg.iloc[-1]) > 0 else 0
+        pct_200   = (price - r_e200) / r_e200 * 100
+        last_open = float(df["o"].iloc[-1])
+        candle    = "🟢 Green" if price >= last_open else "🔴 Red"
 
-        df_hist["Month"] = pd.to_datetime(df_hist["Sell Date"]).dt.strftime("%b %Y")
-        monthly = df_hist.groupby("Month").agg(
-            Trades=("Symbol","count"),
-            Net_PnL=("Net P&L ₹","sum"),
-            Brokerage=("Brokerage ₹","sum")
-        ).reset_index().sort_values("Month", ascending=False)
+        f1 = 35 <= r_rsi <= 45
+        f2 = price > r_e50
+        f3 = r_e20 > r_e50
+        f4 = vol_ratio >= 1.2
+        f5 = price >= last_open
+        passed = sum([f1, f2, f3, f4])
 
-        monthly.columns = ["Month","Trades","Net P&L ₹","Brokerage ₹"]
-        styled_monthly = monthly.style.map(colour_hist, subset=["Net P&L ₹"])
-        st.dataframe(styled_monthly, use_container_width=True, hide_index=True)
+        if passed == 4 and f5:
+            signal = "✅ BUY SETUP"
+        elif passed == 4:
+            signal = "⚠️ Watch (red candle)"
+        elif passed >= 3 and f1:
+            # RSI in zone + 2 other filters = genuine partial setup
+            signal = "🔍 Partial — watch"
+        elif not f1 and r_rsi > 60:
+            # RSI overbought — already ran up, wait for pullback
+            signal = "⏳ Wait — RSI overbought"
+        elif not f1 and r_rsi < 35:
+            # RSI too oversold — falling knife
+            signal = "⚠️ RSI too low — wait"
+        elif not f2 or not f3:
+            signal = "❌ Avoid — trend weak"
+        else:
+            signal = "— Monitor"
+
+        return {
+            "Stock":     stock["symbol"],
+            "LTP ₹":     round(price, 2),
+            "Chg %":     round(chg_pct, 2),
+            "RSI":       round(r_rsi, 1),
+            "EMA 20":    round(r_e20, 2),
+            "EMA 50":    round(r_e50, 2),
+            "EMA 200":   round(r_e200, 2),
+            "% vs 200":  round(pct_200, 1),
+            "Vol Ratio": round(vol_ratio, 2),
+            "Candle":    candle,
+            "Signal":    signal,
+            "_passed":   passed,
+            "_all_pass": passed == 4 and f5,
+        }
+    except Exception as e:
+        return None
+
+# ── Header ─────────────────────────────────────────────────────────────────────
+ist = pytz.timezone("Asia/Kolkata")
+now_ist = datetime.now(ist).strftime("%d %b %Y, %I:%M %p IST")
+
+st.title("📡 Vedhi Finance — Stock Scanner")
+st.caption(f"Live NSE data via Angel One · RSI 35–45 · Price > EMA50 · EMA20 > EMA50 · Volume > 1.2× avg · {now_ist}")
+st.divider()
+
+if not st.session_state.logged_in:
+    st.info("👈 Enter your Angel One credentials in the left sidebar and click Connect.")
+    st.stop()
+
+# Page navigation
+page = st.radio("", ["📡 Scanner", "📒 My Trades"],
+                horizontal=True, label_visibility="collapsed")
+st.divider()
+
+if page == "📒 My Trades":
+    trades_page()
+    st.stop()
+
+# ── Controls ───────────────────────────────────────────────────────────────────
+c1, c2 = st.columns([2, 3])
+with c1:
+    run_scan = st.button("🔍 Run Scanner", use_container_width=True)
+with c2:
+    mode = st.radio("Mode", ["My 5 Stocks", "All Nifty 50"], horizontal=True)
+
+if run_scan:
+    stocks_to_scan = MY5_STOCKS if mode == "My 5 Stocks" else ALL_STOCKS
+    obj     = st.session_state.smart_api
+    results = []
+    errors  = []
+    bar     = st.progress(0)
+
+    for i, stock in enumerate(stocks_to_scan):
+        bar.progress((i+1)/len(stocks_to_scan),
+                     text=f"Fetching {stock['symbol']}...")
+        # Try up to 3 times with increasing delay
+        r = None
+        for attempt in range(3):
+            r = analyse(obj, stock)
+            if r:
+                break
+            time.sleep(1.0 * (attempt + 1))  # 1s, 2s, 3s
+        if r:
+            results.append(r)
+        else:
+            errors.append(stock["symbol"])
+        time.sleep(0.5)  # rate limit buffer between stocks
+    bar.empty()
+
+    if errors:
+        st.caption(f"⚠️ Could not fetch: {', '.join(errors)}")
+
+    if not results:
+        st.error("No data returned. Session may have expired — reconnect from sidebar.")
+        st.stop()
+
+    results.sort(key=lambda x: (-x["_all_pass"], -x["_passed"]))
+
+    buy_setups = sum(1 for r in results if r["_all_pass"])
+    partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Stocks Scanned",   len(results))
+    c2.metric("✅ Buy Setups",    buy_setups)
+    c3.metric("⚠️ Partial Match", partial)
+
+    st.divider()
+
+    df = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.caption(f"Scanned at {datetime.now(ist).strftime('%d %b %Y, %I:%M %p IST')} · Angel One NSE")
+
+else:
+    watching = " · ".join([s["symbol"] for s in MY5_STOCKS])
+    st.info(f"Click **Run Scanner** to get live data · Watching: {watching}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TRADES PAGE
+# ══════════════════════════════════════════════════════════════════════════════
+def trades_page():
+    from trades_db import load_trades, save_trades
+    import pytz
+    from datetime import date
+
+    st.title("📒 My Trades")
+    st.caption("All trade records saved permanently to GitHub.")
+    st.divider()
+
+    # Load trades
+    if "trades_data" not in st.session_state:
+        with st.spinner("Loading trades..."):
+            st.session_state.trades_data = load_trades()
+
+    trades = st.session_state.trades_data
+
+    tab_buy, tab_sell, tab_open, tab_closed = st.tabs([
+        "🟢 Log Buy", "🔴 Close Trade", "📂 Open Trades", "📜 Closed Trades"
+    ])
+
+    # ── Log Buy ───────────────────────────────────────────────────────────────
+    with tab_buy:
+        st.subheader("Log a Buy Trade")
+        with st.form("buy_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                ticker   = st.text_input("Ticker (e.g. SBIN)").upper().strip()
+                buy_date = st.date_input("Buy Date", value=date.today())
+                tranche  = st.selectbox("Tranche", ["1 — Initial entry", "2 — Add-on at −7%"])
+            with c2:
+                buy_rate  = st.number_input("Buy Rate (₹)", min_value=0.01, step=0.5, format="%.2f")
+                qty       = st.number_input("Quantity", min_value=1, step=1)
+                brokerage = st.number_input("Brokerage (₹)", min_value=0.0, step=1.0,
+                                             format="%.2f", help="Total brokerage charges for this trade")
+            with c3:
+                note = st.text_input("Note (optional)")
+                if buy_rate > 0 and qty > 0:
+                    invested = buy_rate * qty
+                    sl       = buy_rate * 0.98
+                    target   = buy_rate * 1.04
+                    st.markdown(f"**Invested:** ₹{invested:,.2f}")
+                    st.markdown(f"**Stop Loss (−2%):** ₹{sl:.2f}")
+                    st.markdown(f"**Target (+4%):** ₹{target:.2f}")
+                    st.markdown(f"**Brokerage:** ₹{brokerage:.2f}")
+
+            if st.form_submit_button("✅ Log Buy", use_container_width=True):
+                if not ticker:
+                    st.error("Enter a ticker.")
+                elif buy_rate == 0 or qty == 0:
+                    st.error("Rate and qty must be > 0.")
+                else:
+                    new_trade = {
+                        "id":         len(trades) + 1,
+                        "ticker":     ticker,
+                        "tranche":    int(tranche[0]),
+                        "buy_date":   str(buy_date),
+                        "buy_rate":   round(buy_rate, 2),
+                        "qty":        int(qty),
+                        "invested":   round(buy_rate * qty, 2),
+                        "stop_loss":  round(buy_rate * 0.98, 2),
+                        "target":     round(buy_rate * 1.04, 2),
+                        "brokerage":  round(brokerage, 2),
+                        "sell_date":  None,
+                        "sell_rate":  None,
+                        "status":     "open",
+                        "pnl":        None,
+                        "pnl_after_brokerage": None,
+                        "holding_days": None,
+                        "note":       note,
+                    }
+                    trades.append(new_trade)
+                    with st.spinner("Saving..."):
+                        ok = save_trades(trades)
+                    st.session_state.trades_data = trades
+                    if ok:
+                        st.success(
+                            f"✅ {ticker} T{tranche[0]} saved  ·  "
+                            f"Stop ₹{buy_rate*0.98:.2f}  ·  Target ₹{buy_rate*1.04:.2f}  ·  "
+                            f"Brokerage ₹{brokerage:.2f}"
+                        )
+                    else:
+                        st.warning("Trade logged locally but could not save to GitHub. Check your token.")
+                    st.rerun()
+
+    # ── Close Trade ───────────────────────────────────────────────────────────
+    with tab_sell:
+        open_trades = [t for t in trades if t.get("status") == "open"]
+        if not open_trades:
+            st.info("No open trades to close.")
+        else:
+            st.subheader("Close a Trade")
+            df_open = pd.DataFrame(open_trades)[
+                ["id","ticker","tranche","buy_date","buy_rate","qty","invested","stop_loss","target","brokerage"]
+            ]
+            st.dataframe(df_open, hide_index=True, use_container_width=True)
+
+            with st.form("sell_form", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    trade_id  = st.number_input("Trade ID to close", min_value=1, step=1)
+                    sell_date = st.date_input("Sell Date", value=date.today())
+                with c2:
+                    sell_rate      = st.number_input("Sell Rate (₹)", min_value=0.01,
+                                                     step=0.5, format="%.2f")
+                    sell_brokerage = st.number_input("Sell Brokerage (₹)", min_value=0.0,
+                                                      step=1.0, format="%.2f",
+                                                      help="Brokerage for the sell side")
+
+                if st.form_submit_button("🔴 Close Trade", use_container_width=True):
+                    match = [t for t in trades
+                             if t["id"] == trade_id and t["status"] == "open"]
+                    if not match:
+                        st.error(f"No open trade with ID {trade_id}.")
+                    else:
+                        t    = match[0]
+                        idx  = trades.index(t)
+                        pnl  = round((sell_rate - t["buy_rate"]) * t["qty"], 2)
+                        total_brokerage = round(t["brokerage"] + sell_brokerage, 2)
+                        pnl_after = round(pnl - total_brokerage, 2)
+                        try:
+                            days = (pd.to_datetime(sell_date) -
+                                    pd.to_datetime(t["buy_date"])).days
+                        except:
+                            days = 0
+
+                        trades[idx].update({
+                            "sell_date":   str(sell_date),
+                            "sell_rate":   round(sell_rate, 2),
+                            "status":      "closed",
+                            "pnl":         pnl,
+                            "brokerage":   total_brokerage,
+                            "pnl_after_brokerage": pnl_after,
+                            "holding_days": days,
+                        })
+                        with st.spinner("Saving..."):
+                            ok = save_trades(trades)
+                        st.session_state.trades_data = trades
+                        emoji = "🟢" if pnl_after >= 0 else "🔴"
+                        st.success(
+                            f"{emoji} Trade #{trade_id} closed  ·  "
+                            f"Gross P&L ₹{pnl:,.2f}  ·  "
+                            f"Brokerage ₹{total_brokerage:.2f}  ·  "
+                            f"Net P&L ₹{pnl_after:,.2f}  ·  "
+                            f"{days} days held"
+                        )
+                        st.rerun()
+
+    # ── Open Trades ───────────────────────────────────────────────────────────
+    with tab_open:
+        open_trades = [t for t in trades if t.get("status") == "open"]
+        if not open_trades:
+            st.info("No open trades.")
+        else:
+            st.subheader(f"{len(open_trades)} Open Trade(s)")
+            df = pd.DataFrame(open_trades)[[
+                "id","ticker","tranche","buy_date","buy_rate",
+                "qty","invested","stop_loss","target","brokerage","note"
+            ]]
+            st.dataframe(df, hide_index=True, use_container_width=True)
+
+            total_invested = sum(t["invested"] for t in open_trades)
+            total_brokerage = sum(t["brokerage"] for t in open_trades)
+            st.metric("Total Invested", f"₹{total_invested:,.2f}")
+            st.metric("Total Brokerage (buy side)", f"₹{total_brokerage:,.2f}")
+
+    # ── Closed Trades ─────────────────────────────────────────────────────────
+    with tab_closed:
+        closed_trades = [t for t in trades if t.get("status") == "closed"]
+        if not closed_trades:
+            st.info("No closed trades yet.")
+        else:
+            st.subheader(f"{len(closed_trades)} Closed Trade(s)")
+            df = pd.DataFrame(closed_trades)[[
+                "id","ticker","tranche","buy_date","sell_date",
+                "buy_rate","sell_rate","qty","invested",
+                "pnl","brokerage","pnl_after_brokerage","holding_days"
+            ]]
+            st.dataframe(df, hide_index=True, use_container_width=True)
+
+            total_pnl       = sum(t["pnl"] or 0 for t in closed_trades)
+            total_brokerage = sum(t["brokerage"] or 0 for t in closed_trades)
+            total_net       = sum(t["pnl_after_brokerage"] or 0 for t in closed_trades)
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Gross P&L",     f"₹{total_pnl:,.2f}")
+            c2.metric("Total Brokerage", f"₹{total_brokerage:,.2f}")
+            c3.metric("Net P&L",       f"₹{total_net:,.2f}",
+                      delta=f"{'profit' if total_net >= 0 else 'loss'}")
+
+        # Reload button
+        if st.button("🔄 Reload from GitHub"):
+            with st.spinner("Loading..."):
+                st.session_state.trades_data = load_trades()
+            st.success("Reloaded.")
+            st.rerun()
