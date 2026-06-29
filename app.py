@@ -195,6 +195,7 @@ def analyse(obj, stock):
             "LTP ₹":     round(price, 2),
             "Chg %":     round(chg_pct, 2),
             "RSI":       round(r_rsi, 1),
+            "_rsi":      r_rsi,
             "EMA 20":    round(r_e20, 2),
             "EMA 50":    round(r_e50, 2),
             "EMA 200":   round(r_e200, 2),
@@ -467,16 +468,20 @@ if run_scan:
     results.sort(key=lambda x: (-x["_all_pass"], -x["_passed"]))
 
     buy_setups = sum(1 for r in results if r["_all_pass"])
-    partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
+    # Partial = RSI in zone + at least 2 other filters (genuine watch candidate)
+    partial    = sum(1 for r in results
+                     if not r["_all_pass"]
+                     and r["_passed"] >= 3
+                     and 35 <= r.get("_rsi", 0) <= 45)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Stocks Scanned",   len(results))
     c2.metric("✅ Buy Setups",    buy_setups)
-    c3.metric("⚠️ Partial Match", partial)
+    c3.metric("🔍 Partial (RSI in zone)", partial)
 
     st.divider()
 
-    df = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
+    df = pd.DataFrame(results).drop(columns=["_passed","_all_pass","_rsi"])
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.caption(f"Scanned at {datetime.now(ist).strftime('%d %b %Y, %I:%M %p IST')} · Angel One NSE")
