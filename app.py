@@ -237,12 +237,11 @@ def trades_page():
             with c1:
                 ticker   = st.text_input("Ticker (e.g. SBIN)").upper().strip()
                 buy_date = st.date_input("Buy Date", value=date.today())
-                tranche  = st.selectbox("Tranche", ["1 — Initial entry", "2 — Add-on at −7%"])
+                tranche  = st.selectbox("Tranche", ["1", "2", "3"])
             with c2:
                 buy_rate  = st.number_input("Buy Rate (₹)", min_value=0.01, step=0.5, format="%.2f")
                 qty       = st.number_input("Quantity", min_value=1, step=1)
-                brokerage = st.number_input("Brokerage (₹)", min_value=0.0, step=1.0,
-                                             format="%.2f", help="Total brokerage charges for this trade")
+
             with c3:
                 note = st.text_input("Note (optional)")
                 if buy_rate > 0 and qty > 0:
@@ -252,7 +251,17 @@ def trades_page():
                     st.markdown(f"**Invested:** ₹{invested:,.2f}")
                     st.markdown(f"**Stop Loss (−2%):** ₹{sl:.2f}")
                     st.markdown(f"**Target (+4%):** ₹{target:.2f}")
-                    st.markdown(f"**Brokerage:** ₹{brokerage:.2f}")
+                    # Show average price if this ticker already has open trades
+                    if ticker:
+                        existing = [t for t in trades
+                                    if t.get("ticker") == ticker
+                                    and t.get("status") == "open"]
+                        if existing:
+                            total_qty = sum(t["qty"] for t in existing) + qty
+                            total_val = sum(t["buy_rate"] * t["qty"] for t in existing) + (buy_rate * qty)
+                            avg       = total_val / total_qty
+                            st.markdown(f"**📊 Avg Price (all tranches):** ₹{avg:.2f}")
+
 
             if st.form_submit_button("✅ Log Buy", use_container_width=True):
                 if not ticker:
@@ -270,7 +279,7 @@ def trades_page():
                         "invested":   round(buy_rate * qty, 2),
                         "stop_loss":  round(buy_rate * 0.98, 2),
                         "target":     round(buy_rate * 1.04, 2),
-                        "brokerage":  round(brokerage, 2),
+
                         "sell_date":  None,
                         "sell_rate":  None,
                         "status":     "open",
@@ -287,8 +296,7 @@ def trades_page():
                         st.success(
                             f"✅ {ticker} T{tranche[0]} saved  ·  "
                             f"Stop ₹{buy_rate*0.98:.2f}  ·  Target ₹{buy_rate*1.04:.2f}  ·  "
-                            f"Brokerage ₹{brokerage:.2f}"
-                        )
+)
                     else:
                         st.warning("Trade logged locally but could not save to GitHub. Check your token.")
                     st.rerun()
@@ -313,9 +321,7 @@ def trades_page():
                 with c2:
                     sell_rate      = st.number_input("Sell Rate (₹)", min_value=0.01,
                                                      step=0.5, format="%.2f")
-                    sell_brokerage = st.number_input("Sell Brokerage (₹)", min_value=0.0,
-                                                      step=1.0, format="%.2f",
-                                                      help="Brokerage for the sell side")
+
 
                 if st.form_submit_button("🔴 Close Trade", use_container_width=True):
                     match = [t for t in trades
@@ -326,8 +332,7 @@ def trades_page():
                         t    = match[0]
                         idx  = trades.index(t)
                         pnl  = round((sell_rate - t["buy_rate"]) * t["qty"], 2)
-                        total_brokerage = round(t["brokerage"] + sell_brokerage, 2)
-                        pnl_after = round(pnl - total_brokerage, 2)
+                        pnl_after = pnl
                         try:
                             days = (pd.to_datetime(sell_date) -
                                     pd.to_datetime(t["buy_date"])).days
@@ -339,8 +344,6 @@ def trades_page():
                             "sell_rate":   round(sell_rate, 2),
                             "status":      "closed",
                             "pnl":         pnl,
-                            "brokerage":   total_brokerage,
-                            "pnl_after_brokerage": pnl_after,
                             "holding_days": days,
                         })
                         with st.spinner("Saving..."):
@@ -349,9 +352,7 @@ def trades_page():
                         emoji = "🟢" if pnl_after >= 0 else "🔴"
                         st.success(
                             f"{emoji} Trade #{trade_id} closed  ·  "
-                            f"Gross P&L ₹{pnl:,.2f}  ·  "
-                            f"Brokerage ₹{total_brokerage:.2f}  ·  "
-                            f"Net P&L ₹{pnl_after:,.2f}  ·  "
+                            f"P&L ₹{pnl:,.2f}  ·  "
                             f"{days} days held"
                         )
                         st.rerun()
@@ -365,14 +366,12 @@ def trades_page():
             st.subheader(f"{len(open_trades)} Open Trade(s)")
             df = pd.DataFrame(open_trades)[[
                 "id","ticker","tranche","buy_date","buy_rate",
-                "qty","invested","stop_loss","target","brokerage","note"
+                "qty","invested","stop_loss","target","note"
             ]]
             st.dataframe(df, hide_index=True, use_container_width=True)
 
             total_invested = sum(t["invested"] for t in open_trades)
-            total_brokerage = sum(t["brokerage"] for t in open_trades)
             st.metric("Total Invested", f"₹{total_invested:,.2f}")
-            st.metric("Total Brokerage (buy side)", f"₹{total_brokerage:,.2f}")
 
     # ── Closed Trades ─────────────────────────────────────────────────────────
     with tab_closed:
@@ -384,19 +383,14 @@ def trades_page():
             df = pd.DataFrame(closed_trades)[[
                 "id","ticker","tranche","buy_date","sell_date",
                 "buy_rate","sell_rate","qty","invested",
-                "pnl","brokerage","pnl_after_brokerage","holding_days"
+                "pnl","holding_days"
             ]]
             st.dataframe(df, hide_index=True, use_container_width=True)
 
-            total_pnl       = sum(t["pnl"] or 0 for t in closed_trades)
-            total_brokerage = sum(t["brokerage"] or 0 for t in closed_trades)
-            total_net       = sum(t["pnl_after_brokerage"] or 0 for t in closed_trades)
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Gross P&L",     f"₹{total_pnl:,.2f}")
-            c2.metric("Total Brokerage", f"₹{total_brokerage:,.2f}")
-            c3.metric("Net P&L",       f"₹{total_net:,.2f}",
-                      delta=f"{'profit' if total_net >= 0 else 'loss'}")
+            total_pnl = sum(t["pnl"] or 0 for t in closed_trades)
+            c1, c2 = st.columns(2)
+            c1.metric("Total P&L", f"₹{total_pnl:,.2f}")
+            c2.metric("Trades Closed", len(closed_trades))
 
         # Reload button
         if st.button("🔄 Reload from GitHub"):
