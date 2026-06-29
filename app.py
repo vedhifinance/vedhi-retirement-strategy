@@ -208,90 +208,6 @@ def analyse(obj, stock):
     except Exception as e:
         return None
 
-# ── Header ─────────────────────────────────────────────────────────────────────
-ist = pytz.timezone("Asia/Kolkata")
-now_ist = datetime.now(ist).strftime("%d %b %Y, %I:%M %p IST")
-
-st.title("📡 Vedhi Finance — Stock Scanner")
-st.caption(f"Live NSE data via Angel One · RSI 35–45 · Price > EMA50 · EMA20 > EMA50 · Volume > 1.2× avg · {now_ist}")
-st.divider()
-
-if not st.session_state.logged_in:
-    st.info("👈 Enter your Angel One credentials in the left sidebar and click Connect.")
-    st.stop()
-
-# Page navigation
-page = st.radio("", ["📡 Scanner", "📒 My Trades"],
-                horizontal=True, label_visibility="collapsed")
-st.divider()
-
-if page == "📒 My Trades":
-    trades_page()
-    st.stop()
-
-# ── Controls ───────────────────────────────────────────────────────────────────
-c1, c2 = st.columns([2, 3])
-with c1:
-    run_scan = st.button("🔍 Run Scanner", use_container_width=True)
-with c2:
-    mode = st.radio("Mode", ["My 5 Stocks", "All Nifty 50"], horizontal=True)
-
-if run_scan:
-    stocks_to_scan = MY5_STOCKS if mode == "My 5 Stocks" else ALL_STOCKS
-    obj     = st.session_state.smart_api
-    results = []
-    errors  = []
-    bar     = st.progress(0)
-
-    for i, stock in enumerate(stocks_to_scan):
-        bar.progress((i+1)/len(stocks_to_scan),
-                     text=f"Fetching {stock['symbol']}...")
-        # Try up to 3 times with increasing delay
-        r = None
-        for attempt in range(3):
-            r = analyse(obj, stock)
-            if r:
-                break
-            time.sleep(1.0 * (attempt + 1))  # 1s, 2s, 3s
-        if r:
-            results.append(r)
-        else:
-            errors.append(stock["symbol"])
-        time.sleep(0.5)  # rate limit buffer between stocks
-    bar.empty()
-
-    if errors:
-        st.caption(f"⚠️ Could not fetch: {', '.join(errors)}")
-
-    if not results:
-        st.error("No data returned. Session may have expired — reconnect from sidebar.")
-        st.stop()
-
-    results.sort(key=lambda x: (-x["_all_pass"], -x["_passed"]))
-
-    buy_setups = sum(1 for r in results if r["_all_pass"])
-    partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Stocks Scanned",   len(results))
-    c2.metric("✅ Buy Setups",    buy_setups)
-    c3.metric("⚠️ Partial Match", partial)
-
-    st.divider()
-
-    df = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    st.caption(f"Scanned at {datetime.now(ist).strftime('%d %b %Y, %I:%M %p IST')} · Angel One NSE")
-
-else:
-    watching = " · ".join([s["symbol"] for s in MY5_STOCKS])
-    st.info(f"Click **Run Scanner** to get live data · Watching: {watching}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TRADES PAGE
-# ══════════════════════════════════════════════════════════════════════════════
 def trades_page():
     from trades_db import load_trades, save_trades
     import pytz
@@ -487,3 +403,89 @@ def trades_page():
                 st.session_state.trades_data = load_trades()
             st.success("Reloaded.")
             st.rerun()
+
+
+# ── Header ─────────────────────────────────────────────────────────────────────
+ist = pytz.timezone("Asia/Kolkata")
+now_ist = datetime.now(ist).strftime("%d %b %Y, %I:%M %p IST")
+
+st.title("📡 Vedhi Finance — Stock Scanner")
+st.caption(f"Live NSE data via Angel One · RSI 35–45 · Price > EMA50 · EMA20 > EMA50 · Volume > 1.2× avg · {now_ist}")
+st.divider()
+
+if not st.session_state.logged_in:
+    st.info("👈 Enter your Angel One credentials in the left sidebar and click Connect.")
+    st.stop()
+
+# Page navigation
+page = st.radio("", ["📡 Scanner", "📒 My Trades"],
+                horizontal=True, label_visibility="collapsed")
+st.divider()
+
+if page == "📒 My Trades":
+    trades_page()
+    st.stop()
+
+# ── Controls ───────────────────────────────────────────────────────────────────
+c1, c2 = st.columns([2, 3])
+with c1:
+    run_scan = st.button("🔍 Run Scanner", use_container_width=True)
+with c2:
+    mode = st.radio("Mode", ["My 5 Stocks", "All Nifty 50"], horizontal=True)
+
+if run_scan:
+    stocks_to_scan = MY5_STOCKS if mode == "My 5 Stocks" else ALL_STOCKS
+    obj     = st.session_state.smart_api
+    results = []
+    errors  = []
+    bar     = st.progress(0)
+
+    for i, stock in enumerate(stocks_to_scan):
+        bar.progress((i+1)/len(stocks_to_scan),
+                     text=f"Fetching {stock['symbol']}...")
+        # Try up to 3 times with increasing delay
+        r = None
+        for attempt in range(3):
+            r = analyse(obj, stock)
+            if r:
+                break
+            time.sleep(1.0 * (attempt + 1))  # 1s, 2s, 3s
+        if r:
+            results.append(r)
+        else:
+            errors.append(stock["symbol"])
+        time.sleep(0.5)  # rate limit buffer between stocks
+    bar.empty()
+
+    if errors:
+        st.caption(f"⚠️ Could not fetch: {', '.join(errors)}")
+
+    if not results:
+        st.error("No data returned. Session may have expired — reconnect from sidebar.")
+        st.stop()
+
+    results.sort(key=lambda x: (-x["_all_pass"], -x["_passed"]))
+
+    buy_setups = sum(1 for r in results if r["_all_pass"])
+    partial    = sum(1 for r in results if r["_passed"] >= 3 and not r["_all_pass"])
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Stocks Scanned",   len(results))
+    c2.metric("✅ Buy Setups",    buy_setups)
+    c3.metric("⚠️ Partial Match", partial)
+
+    st.divider()
+
+    df = pd.DataFrame(results).drop(columns=["_passed","_all_pass"])
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.caption(f"Scanned at {datetime.now(ist).strftime('%d %b %Y, %I:%M %p IST')} · Angel One NSE")
+
+else:
+    watching = " · ".join([s["symbol"] for s in MY5_STOCKS])
+    st.info(f"Click **Run Scanner** to get live data · Watching: {watching}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TRADES PAGE
+# ══════════════════════════════════════════════════════════════════════════════
