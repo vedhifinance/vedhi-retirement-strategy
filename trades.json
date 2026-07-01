@@ -54,5 +54,23 @@
     "pnl_after_brokerage": null,
     "holding_days": null,
     "note": ""
+  },
+  {
+    "id": 4,
+    "ticker": "ONGC",
+    "tranche": 1,
+    "buy_date": "2026-07-01",
+    "buy_rate": 235.0,
+    "qty": 485,
+    "invested": 113975.0,
+    "stop_loss": 230.3,
+    "target": 244.4,
+    "sell_date": null,
+    "sell_rate": null,
+    "status": "open",
+    "pnl": null,
+    "pnl_after_brokerage": null,
+    "holding_days": null,
+    "note": ""
   }
 ]
